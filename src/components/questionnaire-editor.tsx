@@ -1,0 +1,514 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Badge, Button, Card, cx, Notice } from "@/components/ui";
+import { Dialog } from "@/components/client-ui";
+import {
+  addQuestion,
+  addTopic,
+  deleteQuestion,
+  deleteTopic,
+  moveQuestion,
+  moveTopic,
+  updateQuestion,
+  updateTopic,
+  type QuestionInput,
+  type Scope,
+} from "@/app/admin/actions/questionnaire";
+import {
+  isScored,
+  QUESTION_TYPE_LABEL,
+  type ChoiceOption,
+  type Question,
+  type QuestionType,
+  type Topic,
+} from "@/lib/types";
+import type { ActionResult } from "@/lib/action-result";
+
+export function QuestionnaireEditor({
+  scope,
+  parentId,
+  topics,
+  questions,
+  readOnly,
+}: {
+  scope: Scope;
+  parentId: string;
+  topics: Topic[];
+  questions: Question[];
+  readOnly?: boolean;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const exec = (fn: () => Promise<ActionResult>, after?: () => void) =>
+    start(async () => {
+      setError(null);
+      const r = await fn();
+      if (r.error) setError(r.error);
+      else {
+        after?.();
+        router.refresh();
+      }
+    });
+
+  const totalWeight = topics.reduce((s, t) => s + Number(t.weight), 0);
+
+  return (
+    <div className={cx("space-y-4", pending && "opacity-70")}>
+      {error && <Notice tone="error">{error}</Notice>}
+
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-ink-600">
+        <span>
+          <strong className="text-ink-900">{topics.length}</strong> témat
+        </span>
+        <span>
+          <strong className="text-ink-900">{questions.length}</strong> otázek
+        </span>
+        <span>
+          <strong className="text-ink-900">{questions.filter((q) => isScored(q)).length}</strong> bodovaných
+        </span>
+      </div>
+
+      {topics.length === 0 && (
+        <Card className="px-6 py-10 text-center text-sm text-ink-500">
+          Dotazník je zatím prázdný. Začněte přidáním prvního tématu.
+        </Card>
+      )}
+
+      {topics.map((t, ti) => {
+        const qs = questions.filter((q) => q.topic_id === t.id).sort((a, b) => a.position - b.position);
+        const share = totalWeight > 0 ? Math.round((Number(t.weight) / totalWeight) * 100) : 0;
+        return (
+          <Card key={t.id}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="tabular flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand-50 text-xs font-semibold text-brand-700">
+                  {ti + 1}
+                </span>
+                <div className="min-w-0">
+                  <h3 className="truncate font-semibold">{t.title}</h3>
+                  <p className="text-xs text-ink-500">
+                    {qs.length} {plural(qs.length, "otázka", "otázky", "otázek")} · váha {Number(t.weight)}
+                    {totalWeight > 0 && ` (${share} % celkového skóre)`}
+                  </p>
+                </div>
+              </div>
+              {!readOnly && (
+                <div className="flex items-center gap-1">
+                  <IconBtn label="Posunout nahoru" disabled={ti === 0} onClick={() => exec(() => moveTopic(scope, parentId, t.id, -1))}>
+                    ↑
+                  </IconBtn>
+                  <IconBtn
+                    label="Posunout dolů"
+                    disabled={ti === topics.length - 1}
+                    onClick={() => exec(() => moveTopic(scope, parentId, t.id, 1))}
+                  >
+                    ↓
+                  </IconBtn>
+                  <TopicDialog
+                    title="Upravit téma"
+                    initial={t}
+                    onSave={(title, weight, close) => exec(() => updateTopic(scope, parentId, t.id, title, weight), close)}
+                    trigger={(open) => (
+                      <Button variant="ghost" size="sm" onClick={open}>
+                        Upravit
+                      </Button>
+                    )}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-bad!"
+                    onClick={() => {
+                      if (confirm(`Smazat téma „${t.title}“ včetně ${qs.length} otázek?`))
+                        exec(() => deleteTopic(scope, parentId, t.id));
+                    }}
+                  >
+                    Smazat
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <ol className="divide-y divide-ink-100">
+              {qs.map((q, qi) => (
+                <li key={q.id} className="flex items-start gap-3 px-5 py-3">
+                  <span className="tabular w-8 shrink-0 pt-0.5 text-xs text-ink-400">
+                    {ti + 1}.{qi + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-ink-900">{q.text}</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      <Badge>{QUESTION_TYPE_LABEL[q.type]}</Badge>
+                      {q.required ? <Badge>Povinná</Badge> : <Badge tone="neutral">Nepovinná</Badge>}
+                      {isScored(q) ? <Badge tone="brand">Bodovaná · váha {Number(q.weight)}</Badge> : null}
+                      {q.comment_on_negative && <Badge tone="mid">Komentář při záporné odpovědi</Badge>}
+                    </div>
+                    {q.help_text && <p className="mt-1 text-xs text-ink-500">Nápověda: {q.help_text}</p>}
+                  </div>
+                  {!readOnly && (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <IconBtn label="Nahoru" disabled={qi === 0} onClick={() => exec(() => moveQuestion(scope, parentId, t.id, q.id, -1))}>
+                        ↑
+                      </IconBtn>
+                      <IconBtn
+                        label="Dolů"
+                        disabled={qi === qs.length - 1}
+                        onClick={() => exec(() => moveQuestion(scope, parentId, t.id, q.id, 1))}
+                      >
+                        ↓
+                      </IconBtn>
+                      <QuestionDialog
+                        title="Upravit otázku"
+                        initial={q}
+                        onSave={(input, close) => exec(() => updateQuestion(scope, parentId, q.id, input), close)}
+                        trigger={(open) => (
+                          <Button variant="ghost" size="sm" onClick={open}>
+                            Upravit
+                          </Button>
+                        )}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-bad!"
+                        onClick={() => {
+                          if (confirm("Smazat otázku?")) exec(() => deleteQuestion(scope, parentId, q.id));
+                        }}
+                      >
+                        Smazat
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ol>
+            {!readOnly && (
+              <div className="border-t border-ink-100 px-5 py-3">
+                <QuestionDialog
+                  title={`Nová otázka – ${t.title}`}
+                  onSave={(input, close) => exec(() => addQuestion(scope, parentId, t.id, input), close)}
+                  trigger={(open) => (
+                    <Button variant="secondary" size="sm" onClick={open}>
+                      + Přidat otázku
+                    </Button>
+                  )}
+                />
+              </div>
+            )}
+          </Card>
+        );
+      })}
+
+      {!readOnly && (
+        <TopicDialog
+          title="Nové téma"
+          onSave={(title, weight, close) => exec(() => addTopic(scope, parentId, title, weight), close)}
+          trigger={(open) => (
+            <Button variant="secondary" onClick={open}>
+              + Přidat téma
+            </Button>
+          )}
+        />
+      )}
+    </div>
+  );
+}
+
+function plural(n: number, one: string, few: string, many: string) {
+  return n === 1 ? one : n >= 2 && n <= 4 ? few : many;
+}
+
+function IconBtn({
+  children,
+  label,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-7 w-7 items-center justify-center rounded-md text-ink-500 hover:bg-ink-100 disabled:opacity-30"
+    >
+      {children}
+    </button>
+  );
+}
+
+function TopicDialog({
+  title,
+  initial,
+  onSave,
+  trigger,
+}: {
+  title: string;
+  initial?: Topic;
+  onSave: (title: string, weight: number, close: () => void) => void;
+  trigger: (open: () => void) => React.ReactNode;
+}) {
+  return (
+    <Dialog
+      title={title}
+      trigger={trigger}
+      content={(close) => (
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
+            onSave(String(fd.get("title")), Number(fd.get("weight")), close);
+          }}
+        >
+          <label className="block">
+            <span className="label">Název tématu</span>
+            <input name="title" defaultValue={initial?.title} required className="input" autoFocus placeholder="např. Obsluha" />
+          </label>
+          <label className="block">
+            <span className="label">Váha v celkovém skóre</span>
+            <input name="weight" type="number" min={0} step="0.1" defaultValue={initial?.weight ?? 1} className="input w-32" />
+            <span className="hint block">
+              Témata s vyšší váhou mají větší vliv na celkové skóre. Při stejné váze všech témat se počítá prostý průměr.
+            </span>
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={close}>
+              Zrušit
+            </Button>
+            <Button type="submit">Uložit</Button>
+          </div>
+        </form>
+      )}
+    />
+  );
+}
+
+const TYPE_HELP: Record<QuestionType, string> = {
+  yes_no: "Ano = plné body, ne = nula.",
+  yes_no_na: "Odpověď „nelze posoudit“ se do skóre nezapočítá.",
+  scale: "Body poměrně podle zvoleného stupně.",
+  single_choice: "Každá možnost má své body. Plné skóre = možnost s nejvíce body.",
+  multi_choice: "Sčítají se body zaškrtnutých možností.",
+  number: "Volitelně limit: např. „počet lidí ve frontě nejvýše 3“ = plné body.",
+  duration: "Agent zadává minuty. Volitelně limit: např. čekání do 3 minut = plné body.",
+  datetime: "Nebodováno.",
+  short_text: "Nebodováno.",
+  long_text: "Nebodováno.",
+  file: "Agent nahraje fotku nebo soubor. Nebodováno, může být povinné.",
+};
+
+function QuestionDialog({
+  title,
+  initial,
+  onSave,
+  trigger,
+}: {
+  title: string;
+  initial?: Question;
+  onSave: (q: QuestionInput, close: () => void) => void;
+  trigger: (open: () => void) => React.ReactNode;
+}) {
+  return (
+    <Dialog wide title={title} trigger={trigger} content={(close) => <QuestionForm initial={initial} onSave={(q) => onSave(q, close)} onCancel={close} />} />
+  );
+}
+
+function QuestionForm({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial?: Question;
+  onSave: (q: QuestionInput) => void;
+  onCancel: () => void;
+}) {
+  const [type, setType] = useState<QuestionType>(initial?.type ?? "yes_no");
+  const [options, setOptions] = useState<ChoiceOption[]>(
+    initial?.options?.length
+      ? initial.options
+      : [
+          { id: "", label: "", points: 1 },
+          { id: "", label: "", points: 0 },
+        ],
+  );
+  const cfg = initial?.config ?? {};
+  const scorable = !["datetime", "short_text", "long_text", "file"].includes(type);
+  const negativeMakesSense = ["yes_no", "yes_no_na", "scale", "single_choice", "number", "duration"].includes(type);
+
+  return (
+    <form
+      className="space-y-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        const num = (k: string) => {
+          const v = fd.get(k);
+          return v === null || v === "" ? undefined : Number(v);
+        };
+        onSave({
+          text: String(fd.get("text") ?? ""),
+          help_text: String(fd.get("help_text") ?? ""),
+          type,
+          required: fd.get("required") === "on",
+          weight: scorable ? Number(fd.get("weight") ?? 1) : 0,
+          comment_on_negative: negativeMakesSense && fd.get("comment_on_negative") === "on",
+          options,
+          config: {
+            min: num("min"),
+            max: num("max"),
+            minLabel: String(fd.get("minLabel") ?? "") || undefined,
+            maxLabel: String(fd.get("maxLabel") ?? "") || undefined,
+            threshold: num("threshold") ?? null,
+            mode: fd.get("mode") === "gte" ? "gte" : "lte",
+            unit: String(fd.get("unit") ?? "") || undefined,
+          },
+        });
+      }}
+    >
+      <label className="block">
+        <span className="label">Otázka</span>
+        <textarea name="text" required rows={2} defaultValue={initial?.text} className="input" autoFocus />
+      </label>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="block">
+          <span className="label">Typ odpovědi</span>
+          <select className="input" value={type} onChange={(e) => setType(e.target.value as QuestionType)}>
+            {Object.entries(QUESTION_TYPE_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <span className="hint block">{TYPE_HELP[type]}</span>
+        </label>
+        {scorable && (
+          <label className="block">
+            <span className="label">Váha otázky</span>
+            <input name="weight" type="number" min={0} step="0.1" defaultValue={initial?.weight ?? 1} className="input w-32" />
+            <span className="hint block">0 = otázka se nezapočítá do skóre</span>
+          </label>
+        )}
+      </div>
+
+      {type === "scale" && (
+        <div className="grid gap-4 rounded-lg bg-ink-50 p-4 sm:grid-cols-4">
+          <label>
+            <span className="label">Od</span>
+            <input name="min" type="number" defaultValue={cfg.min ?? 1} className="input" />
+          </label>
+          <label>
+            <span className="label">Do</span>
+            <input name="max" type="number" defaultValue={cfg.max ?? 5} className="input" />
+          </label>
+          <label>
+            <span className="label">Popis minima</span>
+            <input name="minLabel" defaultValue={cfg.minLabel ?? ""} placeholder="velmi špatné" className="input" />
+          </label>
+          <label>
+            <span className="label">Popis maxima</span>
+            <input name="maxLabel" defaultValue={cfg.maxLabel ?? ""} placeholder="výborné" className="input" />
+          </label>
+        </div>
+      )}
+
+      {(type === "number" || type === "duration") && (
+        <div className="grid gap-4 rounded-lg bg-ink-50 p-4 sm:grid-cols-3">
+          <label>
+            <span className="label">Plné body, když je hodnota</span>
+            <select name="mode" defaultValue={cfg.mode ?? "lte"} className="input">
+              <option value="lte">nejvýše</option>
+              <option value="gte">alespoň</option>
+            </select>
+          </label>
+          <label>
+            <span className="label">Limit{type === "duration" ? " (minuty)" : ""}</span>
+            <input name="threshold" type="number" step="any" defaultValue={cfg.threshold ?? ""} placeholder="bez bodování" className="input" />
+          </label>
+          {type === "number" && (
+            <label>
+              <span className="label">Jednotka</span>
+              <input name="unit" defaultValue={cfg.unit ?? ""} placeholder="např. osob" className="input" />
+            </label>
+          )}
+        </div>
+      )}
+
+      {(type === "single_choice" || type === "multi_choice") && (
+        <div className="rounded-lg bg-ink-50 p-4">
+          <div className="mb-2 grid grid-cols-[1fr_90px_32px] gap-2 text-xs font-medium text-ink-500">
+            <span>Možnost</span>
+            <span>Body</span>
+            <span />
+          </div>
+          <div className="space-y-2">
+            {options.map((o, i) => (
+              <div key={i} className="grid grid-cols-[1fr_90px_32px] gap-2">
+                <input
+                  className="input"
+                  value={o.label}
+                  placeholder={`Možnost ${i + 1}`}
+                  onChange={(e) => setOptions(options.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
+                />
+                <input
+                  className="input"
+                  type="number"
+                  step="any"
+                  value={o.points}
+                  onChange={(e) => setOptions(options.map((x, j) => (j === i ? { ...x, points: Number(e.target.value) } : x)))}
+                />
+                <button
+                  type="button"
+                  className="rounded-md text-ink-400 hover:bg-ink-100 hover:text-bad"
+                  onClick={() => setOptions(options.filter((_, j) => j !== i))}
+                  aria-label="Odebrat možnost"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+          <Button type="button" variant="ghost" size="sm" className="mt-2" onClick={() => setOptions([...options, { id: "", label: "", points: 0 }])}>
+            + Přidat možnost
+          </Button>
+        </div>
+      )}
+
+      <label className="block">
+        <span className="label">Nápověda pro agenta</span>
+        <input name="help_text" defaultValue={initial?.help_text ?? ""} className="input" placeholder="Na co se zaměřit, jak odpovědět…" />
+      </label>
+
+      <div className="space-y-2">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="required" defaultChecked={initial?.required ?? true} />
+          Povinná otázka
+        </label>
+        {negativeMakesSense && (
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="comment_on_negative" defaultChecked={initial?.comment_on_negative ?? false} />
+            Při záporné odpovědi (nula bodů) vyžadovat komentář
+          </label>
+        )}
+      </div>
+
+      <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          Zrušit
+        </Button>
+        <Button type="submit">Uložit otázku</Button>
+      </div>
+    </form>
+  );
+}

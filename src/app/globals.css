@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --color-ink-50: #f7f7f5;
+  --color-ink-100: #efeeeb;
+  --color-ink-200: #e2e0db;
+  --color-ink-300: #cbc8c1;
+  --color-ink-400: #a19d94;
+  --color-ink-500: #77736b;
+  --color-ink-600: #5a5750;
+  --color-ink-700: #44413c;
+  --color-ink-800: #2b2926;
+  --color-ink-900: #1b1a18;
+
+  --color-brand-50: #eef7f5;
+  --color-brand-100: #d4ece7;
+  --color-brand-200: #a9d8cf;
+  --color-brand-500: #1f8a78;
+  --color-brand-600: #136f61;
+  --color-brand-700: #0e5a4f;
+  --color-brand-800: #0b4840;
+
+  --color-good: #1d7f4e;
+  --color-good-bg: #e6f4ec;
+  --color-mid: #a15c07;
+  --color-mid-bg: #fdf1dc;
+  --color-bad: #b42318;
+  --color-bad-bg: #fdecea;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background: var(--color-ink-50);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Formulářové prvky – ve vrstvě components, aby je šlo přebít utilitami (např. w-48) */
+@layer components {
+  .input {
+    @apply block w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 shadow-xs
+      placeholder:text-ink-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 focus:outline-none
+      disabled:bg-ink-50 disabled:text-ink-500;
+  }
+  .label {
+    @apply mb-1 block text-sm font-medium text-ink-700;
+  }
+  .hint {
+    @apply mt-1 text-xs text-ink-500;
+  }
+}
