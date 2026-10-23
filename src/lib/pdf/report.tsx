@@ -170,11 +170,14 @@ function Mark({ kind }: { kind: "yes" | "no" | "partial" | "na" }) {
   );
 }
 
-function PageChrome({ appName, branchName, companyName }: { appName: string; branchName: string; companyName: string }) {
+function PageChrome({ appName, branchName, companyName, draft }: { appName: string; branchName: string; companyName: string; draft?: boolean }) {
   return (
     <>
       <View style={s.head} fixed>
-        <Text style={s.headApp}>{appName.toUpperCase()}</Text>
+        <Text style={s.headApp}>
+          {appName.toUpperCase()}
+          {draft ? "  ·  NÁHLED" : ""}
+        </Text>
         <Text style={s.headBranch}>
           {companyName} · {branchName}
         </Text>
@@ -291,6 +294,11 @@ function Cover({ d, blocks }: { d: PdfData; blocks: TopicBlock[] }) {
         <View style={s.heroTop}>
           <View style={{ flex: 1, paddingRight: 20 }}>
             <Text style={s.eyebrow}>{d.appName.toUpperCase()} · VÝSLEDEK KONTROLY</Text>
+            {!d.approved && (
+              <View style={{ alignSelf: "flex-start", marginTop: 10, backgroundColor: C.midBg, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 3 }}>
+                <Text style={{ color: C.mid, fontSize: 8, fontWeight: 700, letterSpacing: 0.6 }}>NÁHLED – ČEKÁ NA SCHVÁLENÍ</Text>
+              </View>
+            )}
             <Text style={s.heroTitle}>{d.branchName}</Text>
             <Text style={s.heroSub}>{d.companyName}</Text>
           </View>
@@ -318,7 +326,6 @@ function Cover({ d, blocks }: { d: PdfData; blocks: TopicBlock[] }) {
       </View>
 
       <View style={{ paddingHorizontal: 40, paddingTop: 28 }}>
-        {d.approved ? (
           <View style={{ flexDirection: "row", gap: 24, alignItems: "center" }}>
             <View style={{ alignItems: "center", width: 150 }}>
               <ScoreRing score={d.score} size={140} stroke={13} />
@@ -339,13 +346,8 @@ function Cover({ d, blocks }: { d: PdfData; blocks: TopicBlock[] }) {
               ))}
             </View>
           </View>
-        ) : (
-          <View style={[s.card, { backgroundColor: C.midBg, borderColor: C.midBg }]}>
-            <Text style={{ color: C.mid, fontWeight: 600 }}>Kontrola zatím nebyla schválena – skóre se dopočítá při schválení.</Text>
-          </View>
-        )}
 
-        {d.approved && strengths.length > 1 && (
+        {strengths.length > 1 && (
           <View style={{ flexDirection: "row", gap: 12, marginTop: 22 }}>
             <View style={[s.card, { flex: 1, backgroundColor: C.goodBg, borderColor: C.goodBg }]}>
               <Text style={[s.sectionLabel, { color: C.good }]}>NEJSILNĚJŠÍ OBLAST</Text>
@@ -360,9 +362,9 @@ function Cover({ d, blocks }: { d: PdfData; blocks: TopicBlock[] }) {
           </View>
         )}
 
-        {d.approved && d.history.length > 1 && <History points={d.history} />}
+        {d.history.length > 1 && <History points={d.history} />}
 
-        {d.approved && <ScaleLegend />}
+        {<ScaleLegend />}
 
         <View style={{ flexDirection: "row", gap: 16, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
           <Text style={{ fontSize: 7.5, color: C.muted, fontWeight: 600 }}>ZNAČKY:</Text>
@@ -375,7 +377,7 @@ function Cover({ d, blocks }: { d: PdfData; blocks: TopicBlock[] }) {
 
       <View style={[s.foot, { left: 40, right: 40 }]}>
         <Text>{d.appName}</Text>
-        <Text>{d.approvedAt ? `Schváleno ${fmtDate(d.approvedAt)}` : "Neschválená verze"}</Text>
+        <Text>{d.approved && d.approvedAt ? `Schváleno ${fmtDate(d.approvedAt)}` : "Náhled – kontrola zatím není schválená"}</Text>
       </View>
     </Page>
   );
@@ -511,16 +513,16 @@ function TopicPage({ b, d, first, spaced }: { b: TopicBlock; d: PdfData; first: 
         </View>
         <View style={{ flex: 1 }}>
           <Text style={s.h2}>{b.topic.title}</Text>
-          {d.approved && (
+          {b.max > 0 && (
             <Text style={{ fontSize: 8.5, color: C.muted, marginTop: 2 }}>
               Dosaženo {fmtPoints(b.achieved)} z {fmtPoints(b.max)} bodů
             </Text>
           )}
         </View>
-        {d.approved && <ScoreRing score={score ?? null} size={54} stroke={6} />}
+        <ScoreRing score={score ?? null} size={54} stroke={6} />
       </View>
 
-      {d.approved && (
+      {(
         <View style={{ marginBottom: 12 }}>
           <Bar score={score} height={5} />
         </View>
@@ -618,8 +620,18 @@ function ScaleLegend() {
   );
 }
 
-function Report({ d }: { d: PdfData }) {
-  const blocks = buildBlocks(d.content);
+function Report({ d: input }: { d: PdfData }) {
+  const blocks = buildBlocks(input.content);
+  let d = input;
+  if (!input.approved) {
+    // Neschválená kontrola: skóre v databázi ještě není, dopočítáme ho stejně jako při schválení
+    const round1 = (x: number) => Math.round(x * 10) / 10;
+    for (const b of blocks) b.topic.score = b.max > 0 ? round1((b.achieved / b.max) * 100) : null;
+    const counted = blocks.filter((b) => isScoredTopic(b) && b.topic.score !== null);
+    const w = counted.reduce((sum, b) => sum + Number(b.topic.weight), 0);
+    const score = w > 0 ? round1(counted.reduce((sum, b) => sum + Number(b.topic.weight) * b.topic.score!, 0) / w) : null;
+    d = { ...input, score, history: input.history.map((h) => (h.current ? { ...h, score } : h)) };
+  }
   const firstScored = blocks.findIndex(isScoredTopic);
   const before = blocks.filter((b, i) => !isScoredTopic(b) && (firstScored < 0 || i < firstScored));
   const scored = blocks.filter(isScoredTopic);
@@ -628,7 +640,7 @@ function Report({ d }: { d: PdfData }) {
   // fotky u bodovaných otázek jsou přímo u otázky, ostatní (účtenka, fotky k poznámkám) jdou do příloh
   const inline = new Set(scored.flatMap((b) => b.scored).map((r) => r.q.id));
   const appendix = d.content.attachments.filter((a) => d.images[a.id] && (!a.question_id || !inline.has(a.question_id)));
-  const chrome = <PageChrome appName={d.appName} branchName={d.branchName} companyName={d.companyName} />;
+  const chrome = <PageChrome appName={d.appName} branchName={d.branchName} companyName={d.companyName} draft={!d.approved} />;
 
   return (
     <Document title={`${d.companyName} – ${d.branchName}`} author={d.appName}>
