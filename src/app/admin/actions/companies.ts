@@ -15,8 +15,8 @@ async function uploadLogo(companyId: string, file: File | null) {
   const db = await createClient();
   const ext = file.name.split(".").pop()?.toLowerCase() || "png";
   const path = `${companyId}/logo-${Date.now()}.${ext}`;
-  const { error } = await db.storage.from("logos").upload(path, file, { contentType: file.type, upsert: true });
-  if (error) throw error;
+  const { error } = await db.storage.from("logos").upload(path, file, { contentType: file.type });
+  if (error) throw new Error(`Logo se nepodařilo nahrát: ${error.message}`);
   return db.storage.from("logos").getPublicUrl(path).data.publicUrl;
 }
 

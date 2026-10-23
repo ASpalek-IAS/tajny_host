@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  experimental: {
+    // loga firem až 2 MB (+ režie formuláře)
+    serverActions: { bodySizeLimit: "3mb" },
+  },
   serverExternalPackages: ["@react-pdf/renderer", "exceljs"],
   outputFileTracingIncludes: {
     "/api/inspections/[id]/pdf": ["./src/lib/pdf/fonts/**"],

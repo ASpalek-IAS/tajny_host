@@ -9,6 +9,7 @@ export function errorMessage(e: unknown): string {
   if (e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string") {
     const m = (e as { message: string }).message;
     if (m.includes("duplicate key")) return "Záznam už existuje.";
+    if (m.startsWith("Logo se nepodařilo nahrát")) return m;
     if (m.includes("row-level security") || m.includes("permission denied")) return "K této akci nemáte oprávnění.";
     return m;
   }
