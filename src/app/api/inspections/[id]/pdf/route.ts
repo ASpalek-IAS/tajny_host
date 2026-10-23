@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
 import { loadInspectionContent } from "@/lib/inspection-data";
-import { renderReportPdf } from "@/lib/pdf/report";
+import { renderReportPdf, type HistoryPoint } from "@/lib/pdf/report";
 import { APP_NAME } from "@/lib/email";
 
 export const runtime = "nodejs";
@@ -43,12 +43,15 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     branch_name: string;
     branch_address: string | null;
     company_id: string;
+    branch_id: string;
+    template_id: string | null;
+    window_start: string;
   } | null = null;
 
   if (profile.role === "admin") {
     const { data } = await db
       .from("inspections")
-      .select("title,visit_at,approved_at,score,status,company_id,branch:branches(name,address)")
+      .select("title,visit_at,approved_at,score,status,company_id,branch_id,template_id,window_start,branch:branches(name,address)")
       .eq("id", id)
       .maybeSingle();
     if (data) {
@@ -65,6 +68,26 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     db.from("companies").select("name,logo_url").eq("id", base.company_id).single(),
     loadInspectionContent(db, id),
   ]);
+
+  // Vývoj: posledních až 8 schválených kontrol stejné provozovny podle stejného dotazníku
+  let history: HistoryPoint[] = [];
+  if (base.template_id) {
+    const src = profile.role === "admin" ? "inspections" : "client_inspections";
+    const { data: prev } = await db
+      .from(src)
+      .select("id,visit_at,window_start,score")
+      .eq("branch_id", base.branch_id)
+      .eq("template_id", base.template_id)
+      .eq("status", profile.role === "admin" ? "approved" : "done");
+    const cur = (base.visit_at ?? base.window_start).slice(0, 10);
+    history = (prev ?? [])
+      .map((p) => ({ id: p.id as string, date: ((p.visit_at ?? p.window_start) as string).slice(0, 10), score: p.score as number | null }))
+      .filter((p) => p.id !== id && p.date <= cur)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-7)
+      .map((p) => ({ date: p.date, score: p.score, current: false }));
+    history.push({ date: cur, score: base.score, current: true });
+  }
 
   const imgs = content.attachments.filter((a) => a.mime_type === "image/jpeg" || a.mime_type === "image/png");
   const buffers = await Promise.all(imgs.map((a) => fetchBuffer(a.url)));
@@ -87,6 +110,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     approved: base.approved,
     content,
     images,
+    history,
   });
 
   const date = (base.visit_at ?? new Date().toISOString()).slice(0, 10);
