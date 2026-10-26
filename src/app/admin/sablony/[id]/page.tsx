@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { ActionForm, SubmitButton } from "@/components/client-ui";
 import { Card, CardHeader, Field, Notice, PageHeader } from "@/components/ui";
-import { QuestionnaireEditor, type LibraryQuestion } from "@/components/questionnaire-editor";
+import { QuestionnaireEditor } from "@/components/questionnaire-editor";
+import { loadQuestionLibrary } from "@/lib/question-library";
 import { createClient } from "@/lib/supabase/server";
 import { updateTemplate } from "@/app/admin/actions/templates";
 import type { Question, Topic } from "@/lib/types";
@@ -22,19 +23,7 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
   const { data: usage } = await db.rpc("template_usage", { p_template: id });
 
   // Knihovna: otázky z témat se stejným názvem ze všech šablon i z dřívějších verzí (kontrol)
-  const titles = [...new Set((topics ?? []).map((t) => t.title as string))];
-  const library: Record<string, LibraryQuestion[]> = {};
-  if (titles.length) {
-    const { data: lib } = await db.rpc("question_library", { p_titles: titles });
-    ((lib ?? []) as (Omit<LibraryQuestion, "id" | "topic_id" | "position"> & { topic_title: string; template_id: string | null })[]).forEach(
-      (q, i) => {
-        const key = q.topic_title.trim().toLowerCase();
-        (library[key] ??= []).push({ ...q, id: `lib-${i}`, topic_id: "", position: i, template_name: q.template_name ?? "", company_name: q.company_name ?? "" });
-      },
-    );
-    for (const k of Object.keys(library))
-      library[k].sort((x, y) => Number(x.source === "history") - Number(y.source === "history") || x.text.localeCompare(y.text, "cs"));
-  }
+  const library = await loadQuestionLibrary(db, (topics ?? []).map((t) => t.title as string));
 
   return (
     <>

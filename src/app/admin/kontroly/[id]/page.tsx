@@ -7,6 +7,7 @@ import { InspectionForm } from "@/components/inspection-form";
 import { QuestionnaireEditor } from "@/components/questionnaire-editor";
 import { createClient } from "@/lib/supabase/server";
 import { loadInspectionContent } from "@/lib/inspection-data";
+import { loadQuestionLibrary } from "@/lib/question-library";
 import { fmtDateTime, fmtWindow } from "@/lib/format";
 import type { InspectionStatus } from "@/lib/types";
 import {
@@ -80,6 +81,7 @@ export default async function AdminInspectionPage({
 
   const beforeStart = i.status === "planned" || i.status === "assigned";
   const hasAnswers = Object.keys(content.answers).length > 0;
+  const library = beforeStart && !hasAnswers ? await loadQuestionLibrary(db, content.topics.map((t) => t.title)) : {};
   const editing = upravit === "1" && i.status !== "cancelled";
 
   return (
@@ -140,7 +142,13 @@ export default async function AdminInspectionPage({
               <Notice>
                 Agent zatím nezačal. Otázky této kontroly můžete upravit – změna se týká jen této kontroly, šablona zůstane beze změny.
               </Notice>
-              <QuestionnaireEditor scope="inspection" parentId={id} topics={content.topics} questions={content.questions} />
+              <QuestionnaireEditor
+                scope="inspection"
+                parentId={id}
+                topics={content.topics}
+                questions={content.questions}
+                library={library}
+              />
             </>
           ) : (
             <InspectionResult content={content} showScores={i.status === "approved"} />
