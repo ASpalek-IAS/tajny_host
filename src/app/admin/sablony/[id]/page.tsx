@@ -4,10 +4,12 @@ import { Card, CardHeader, Field, Notice, PageHeader } from "@/components/ui";
 import { QuestionnaireEditor } from "@/components/questionnaire-editor";
 import { loadQuestionLibrary } from "@/lib/question-library";
 import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/auth";
 import { updateTemplate } from "@/app/admin/actions/templates";
 import type { Question, Topic } from "@/lib/types";
 
 export default async function TemplatePage({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdmin();
   const { id } = await params;
   const db = await createClient();
   const { data: tpl } = await db.from("templates").select("*,company:companies(id,name)").eq("id", id).maybeSingle();

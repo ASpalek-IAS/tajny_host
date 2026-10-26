@@ -4,6 +4,7 @@ import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, Table, Tab
 import { SubmitButton } from "@/components/client-ui";
 import { InspectionTable, INSPECTION_LIST_SELECT, type InspectionListRow } from "@/components/inspection-table";
 import { createClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/auth";
 import { fmtDate, fmtDateTime } from "@/lib/format";
 import { INTERVAL_LABEL, type Branch, type Company, type Profile } from "@/lib/types";
 import { CompanyForm } from "../company-form";
@@ -12,13 +13,14 @@ import { deleteSchedule } from "@/app/admin/actions/templates";
 import { UserDialog } from "@/app/admin/user-form";
 import { BranchDialog, ImportBranchesDialog, ScheduleDialog, TemplateDialog, type ScheduleRow } from "./dialogs";
 
+// adminOnly = kontrolor záložku nevidí
 const TABS = [
   { key: "provozovny", label: "Provozovny" },
-  { key: "uzivatele", label: "Uživatelé klienta" },
+  { key: "uzivatele", label: "Uživatelé klienta", adminOnly: true },
   { key: "dotazniky", label: "Dotazníky" },
   { key: "plany", label: "Plány opakování" },
   { key: "kontroly", label: "Kontroly" },
-  { key: "udaje", label: "Údaje firmy" },
+  { key: "udaje", label: "Údaje firmy", adminOnly: true },
 ];
 
 export default async function CompanyPage({
@@ -29,7 +31,11 @@ export default async function CompanyPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { id } = await params;
-  const { tab = "provozovny" } = await searchParams;
+  const me = await requireStaff();
+  const isAdmin = me.role === "admin";
+  const tabs = TABS.filter((t) => isAdmin || !t.adminOnly);
+  const { tab: tabKey = "provozovny" } = await searchParams;
+  const tab = tabs.some((t) => t.key === tabKey) ? tabKey : "provozovny";
   const db = await createClient();
   const { data: company } = await db.from("companies").select("*").eq("id", id).maybeSingle();
   if (!company) notFound();
@@ -48,11 +54,11 @@ export default async function CompanyPage({
         back={{ href: "/admin/firmy", label: "Firmy" }}
         actions={<LinkButton href={`/admin/kontroly/nova?firma=${id}`}>Naplánovat kontrolu</LinkButton>}
       />
-      <Tabs active={tab} tabs={TABS.map((t) => ({ ...t, href: `/admin/firmy/${id}?tab=${t.key}` }))} />
+      <Tabs active={tab} tabs={tabs.map((t) => ({ key: t.key, label: t.label, href: `/admin/firmy/${id}?tab=${t.key}` }))} />
 
-      {tab === "provozovny" && <BranchesTab companyId={id} branches={branches} />}
+      {tab === "provozovny" && <BranchesTab companyId={id} branches={branches} canEdit={isAdmin} />}
       {tab === "uzivatele" && <UsersTab companyId={id} branches={branches} />}
-      {tab === "dotazniky" && <TemplatesTab companyId={id} />}
+      {tab === "dotazniky" && <TemplatesTab companyId={id} canEdit={isAdmin} />}
       {tab === "plany" && <SchedulesTab companyId={id} branches={branches} />}
       {tab === "kontroly" && <InspectionsTab companyId={id} />}
       {tab === "udaje" && (
@@ -64,16 +70,18 @@ export default async function CompanyPage({
   );
 }
 
-function BranchesTab({ companyId, branches }: { companyId: string; branches: Branch[] }) {
+function BranchesTab({ companyId, branches, canEdit }: { companyId: string; branches: Branch[]; canEdit: boolean }) {
   return (
     <Card>
       <CardHeader
         title={`Provozovny (${branches.length})`}
         action={
-          <div className="flex gap-2">
-            <ImportBranchesDialog companyId={companyId} />
-            <BranchDialog companyId={companyId} />
-          </div>
+          canEdit ? (
+            <div className="flex gap-2">
+              <ImportBranchesDialog companyId={companyId} />
+              <BranchDialog companyId={companyId} />
+            </div>
+          ) : undefined
         }
       />
       {branches.length === 0 ? (
@@ -96,9 +104,7 @@ function BranchesTab({ companyId, branches }: { companyId: string; branches: Bra
                 </Td>
                 <Td className="text-ink-600">{b.address ?? "—"}</Td>
                 <Td className="max-w-xs truncate text-ink-600">{b.note_for_agent ?? "—"}</Td>
-                <Td className="text-right">
-                  <BranchDialog companyId={companyId} branch={b} />
-                </Td>
+                <Td className="text-right">{canEdit && <BranchDialog companyId={companyId} branch={b} />}</Td>
               </tr>
             ))}
           </tbody>
@@ -165,7 +171,7 @@ async function UsersTab({ companyId, branches }: { companyId: string; branches: 
   );
 }
 
-async function TemplatesTab({ companyId }: { companyId: string }) {
+async function TemplatesTab({ companyId, canEdit }: { companyId: string; canEdit: boolean }) {
   const db = await createClient();
   const [{ data }, { data: all }] = await Promise.all([
     db
@@ -193,8 +199,12 @@ async function TemplatesTab({ companyId }: { companyId: string }) {
     <Card>
       <CardHeader
         title="Dotazníky"
-        sub="Šablony otázek. Každá kontrola si při vytvoření uloží vlastní kopii."
-        action={<TemplateDialog companyId={companyId} sources={sources} />}
+        sub={
+          canEdit
+            ? "Šablony otázek. Každá kontrola si při vytvoření uloží vlastní kopii."
+            : "Šablony otázek. Upravovat je může jen správce."
+        }
+        action={canEdit ? <TemplateDialog companyId={companyId} sources={sources} /> : undefined}
       />
       {rows.length === 0 ? (
         <EmptyState title="Firma zatím nemá žádný dotazník" />
@@ -212,9 +222,13 @@ async function TemplatesTab({ companyId }: { companyId: string }) {
             {rows.map((t) => (
               <tr key={t.id} className="hover:bg-ink-50">
                 <Td>
-                  <Link href={`/admin/sablony/${t.id}`} className="font-medium hover:text-brand-700">
-                    {t.name}
-                  </Link>{" "}
+                  {canEdit ? (
+                    <Link href={`/admin/sablony/${t.id}`} className="font-medium hover:text-brand-700">
+                      {t.name}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{t.name}</span>
+                  )}{" "}
                   {t.archived && <Badge>archiv</Badge>}
                   {t.description && <p className="text-xs text-ink-500">{t.description}</p>}
                 </Td>

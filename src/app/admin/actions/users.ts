@@ -2,10 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertAdmin } from "./guard";
+import { assertStaff } from "./guard";
 import { sendAccessLink } from "@/lib/notify";
 import { errorMessage, type ActionResult } from "@/lib/action-result";
 import type { Role } from "@/lib/types";
+
+const NO_RIGHTS = "Kontrolor může spravovat jen agenty.";
 
 function linkResult(r: { link?: string; emailed: boolean }, what: string): ActionResult {
   return r.emailed
@@ -19,9 +21,11 @@ function linkResult(r: { link?: string; emailed: boolean }, what: string): Actio
 
 export async function inviteUser(_: ActionResult, fd: FormData): Promise<ActionResult> {
   try {
-    await assertAdmin();
+    const me = await assertStaff();
     const role = String(fd.get("role")) as Role;
-    if (!["admin", "client", "agent"].includes(role)) return { error: "Neplatná role." };
+    if (!["admin", "controller", "client", "agent"].includes(role)) return { error: "Neplatná role." };
+    // kontrolora (i správce a klienty) přidává jen správce
+    if (me.role !== "admin" && role !== "agent") return { error: NO_RIGHTS };
     const email = String(fd.get("email") ?? "").trim().toLowerCase();
     const fullName = String(fd.get("full_name") ?? "").trim();
     if (!email || !fullName) return { error: "Vyplňte jméno a e-mail." };
@@ -64,11 +68,12 @@ export async function inviteUser(_: ActionResult, fd: FormData): Promise<ActionR
 
 export async function updateUser(_: ActionResult, fd: FormData): Promise<ActionResult> {
   try {
-    const me = await assertAdmin();
+    const me = await assertStaff();
     const id = String(fd.get("id"));
     const db = createAdminClient();
     const { data: p } = await db.from("profiles").select("role,company_id").eq("id", id).single();
     if (!p) return { error: "Uživatel nenalezen." };
+    if (me.role !== "admin" && p.role !== "agent") return { error: NO_RIGHTS };
     const active = fd.get("active") === "on";
     if (id === me.id && !active) return { error: "Sami sebe deaktivovat nemůžete." };
     const allBranches = p.role !== "client" || fd.get("all_branches") !== "restricted";
@@ -102,8 +107,12 @@ export async function updateUser(_: ActionResult, fd: FormData): Promise<ActionR
 
 export async function resendAccess(_: ActionResult, fd: FormData): Promise<ActionResult> {
   try {
-    await assertAdmin();
+    const me = await assertStaff();
     const email = String(fd.get("email"));
+    if (me.role !== "admin") {
+      const { data: p } = await createAdminClient().from("profiles").select("role").eq("email", email).maybeSingle();
+      if (p?.role !== "agent") return { error: NO_RIGHTS };
+    }
     const r = await sendAccessLink({ email, type: "recovery" });
     if (r.error) return { error: r.error };
     return linkResult(r, "Nový odkaz připraven.");

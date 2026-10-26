@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
     await db.from("inspections").update({ overdue_sent_at: new Date().toISOString() }).eq("id", r.id);
   }
   if (lateRows.length) {
-    const { data: admins } = await db.from("profiles").select("email").eq("role", "admin").eq("active", true);
+    const { data: admins } = await db.from("profiles").select("email").in("role", ["admin", "controller"]).eq("active", true);
     await sendEmail({
       to: (admins ?? []).map((a) => a.email),
       subject: `${lateRows.length} ${lateRows.length === 1 ? "kontrola je" : "kontrol je"} po termínu`,

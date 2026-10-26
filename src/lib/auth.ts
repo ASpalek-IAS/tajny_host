@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Profile, Role } from "@/lib/types";
+import { isStaff, type Profile, type Role } from "@/lib/types";
 
 /** Přihlášený uživatel a jeho profil (jednou za požadavek). */
 export const getProfile = cache(async (): Promise<Profile | null> => {
@@ -22,6 +22,16 @@ export async function requireRole(...roles: Role[]): Promise<Profile> {
   return profile;
 }
 
+/** Stránka jen pro správce – kontrolora vrátí na přehled. */
+export function requireAdmin() {
+  return requireRole("admin");
+}
+
+/** Správce i kontrolor (administrace). */
+export function requireStaff() {
+  return requireRole("admin", "controller");
+}
+
 export function homeFor(role: Role) {
-  return role === "admin" ? "/admin" : role === "client" ? "/klient" : "/agent";
+  return isStaff(role) ? "/admin" : role === "client" ? "/klient" : "/agent";
 }

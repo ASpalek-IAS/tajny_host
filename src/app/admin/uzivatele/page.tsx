@@ -1,11 +1,29 @@
-import { Badge, Card, CardHeader, EmptyState, PageHeader, Table, Tabs, Td, Th } from "@/components/ui";
+import { Badge, Card, CardHeader, EmptyState, Notice, PageHeader, Table, Tabs, Td, Th } from "@/components/ui";
 import { UserDialog } from "@/app/admin/user-form";
 import { createClient } from "@/lib/supabase/server";
-import type { Profile } from "@/lib/types";
+import { requireStaff } from "@/lib/auth";
+import type { Profile, Role } from "@/lib/types";
+
+const TABS: { key: string; role: Role; label: string; title: string; sub: string; add: string }[] = [
+  { key: "agenti", role: "agent", label: "Agenti", title: "Agenti", sub: "Vidí jen kontroly, které jim přiřadíte.", add: "Přidat agenta" },
+  {
+    key: "kontrolori",
+    role: "controller",
+    label: "Kontroloři",
+    title: "Kontroloři",
+    sub: "Plánují kontroly, přiřazují agenty, kontrolují a schvalují výsledky. Nemění šablony ani otázky a nevidí účetnictví.",
+    add: "Přidat kontrolora",
+  },
+  { key: "spravci", role: "admin", label: "Správci", title: "Správci", sub: "Mají plný přístup ke všem firmám a kontrolám.", add: "Přidat správce" },
+];
 
 export default async function UsersPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const { tab = "agenti" } = await searchParams;
-  const role = tab === "spravci" ? "admin" : "agent";
+  const me = await requireStaff();
+  const isAdmin = me.role === "admin";
+  const { tab: tabKey = "agenti" } = await searchParams;
+  // kontrolor pracuje jen s agenty
+  const tab = (isAdmin && TABS.find((t) => t.key === tabKey)) || TABS[0];
+  const role = tab.role;
   const db = await createClient();
   const { data } = await db.from("profiles").select("*").eq("role", role).order("active", { ascending: false }).order("full_name");
   const users = (data ?? []) as Profile[];
@@ -24,20 +42,18 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <PageHeader title="Agenti a správci" />
-      <Tabs
-        active={tab}
-        tabs={[
-          { key: "agenti", label: "Agenti", href: "/admin/uzivatele?tab=agenti" },
-          { key: "spravci", label: "Správci", href: "/admin/uzivatele?tab=spravci" },
-        ]}
-      />
+      <PageHeader title={isAdmin ? "Agenti a správci" : "Agenti"} />
+      {isAdmin ? (
+        <Tabs active={tab.key} tabs={TABS.map((t) => ({ key: t.key, label: t.label, href: `/admin/uzivatele?tab=${t.key}` }))} />
+      ) : (
+        <div className="mb-6">
+          <Notice>
+            Jako kontrolor vidíte a spravujete jen agenty. Kontrolory a správce může zobrazit a upravovat pouze správce.
+          </Notice>
+        </div>
+      )}
       <Card>
-        <CardHeader
-          title={role === "agent" ? "Agenti" : "Správci"}
-          sub={role === "agent" ? "Vidí jen kontroly, které jim přiřadíte." : "Mají plný přístup ke všem firmám a kontrolám."}
-          action={<UserDialog role={role} triggerLabel={role === "agent" ? "Přidat agenta" : "Přidat správce"} />}
-        />
+        <CardHeader title={tab.title} sub={tab.sub} action={<UserDialog role={role} triggerLabel={tab.add} />} />
         {users.length === 0 ? (
           <EmptyState title="Zatím nikdo" />
         ) : (

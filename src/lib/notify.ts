@@ -33,7 +33,7 @@ async function loadInspections(ids: string[]) {
 
 async function adminEmails() {
   const db = createAdminClient();
-  const { data } = await db.from("profiles").select("email").eq("role", "admin").eq("active", true);
+  const { data } = await db.from("profiles").select("email").in("role", ["admin", "controller"]).eq("active", true);
   return (data ?? []).map((p) => p.email as string);
 }
 

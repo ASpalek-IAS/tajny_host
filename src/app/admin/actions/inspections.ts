@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { assertAdmin } from "./guard";
+import { assertStaff } from "./guard";
 import { notifyApproved, notifyAssigned, notifyReturned } from "@/lib/notify";
 import { errorMessage, type ActionResult } from "@/lib/action-result";
 
@@ -16,7 +16,7 @@ function revalidateInspection(id?: string) {
 export async function createInspections(_: ActionResult, fd: FormData): Promise<ActionResult> {
   const ids: string[] = [];
   try {
-    await assertAdmin();
+    await assertStaff();
     const db = await createClient();
     const branchIds = fd.getAll("branch_ids").map(String).filter(Boolean);
     const templateId = String(fd.get("template_id") ?? "");
@@ -50,7 +50,7 @@ export async function createInspections(_: ActionResult, fd: FormData): Promise<
 
 export async function updateInspection(_: ActionResult, fd: FormData): Promise<ActionResult> {
   try {
-    await assertAdmin();
+    const me = await assertStaff();
     const db = await createClient();
     const id = String(fd.get("id"));
     const { data: before } = await db.from("inspections").select("agent_id,status").eq("id", id).single();
@@ -58,6 +58,8 @@ export async function updateInspection(_: ActionResult, fd: FormData): Promise<A
     const ws = String(fd.get("window_start"));
     const we = String(fd.get("window_end") ?? "") || ws;
     if (we < ws) return { error: "Konec termínu musí být po začátku." };
+    // útratu mění jen správce; když pole ve formuláři není, zůstane beze změny
+    const hasExpense = me.role === "admin" && fd.has("expense");
     const rawExpense = String(fd.get("expense") ?? "").replace(/\s/g, "").replace(",", ".");
     const expense = rawExpense === "" ? null : Number(rawExpense);
     if (expense !== null && (!Number.isFinite(expense) || expense < 0)) return { error: "Útrata musí být kladné číslo." };
@@ -71,7 +73,7 @@ export async function updateInspection(_: ActionResult, fd: FormData): Promise<A
         window_end: we,
         agent_id: agent,
         instructions: String(fd.get("instructions") ?? "").trim() || null,
-        expense: expense === null ? null : Math.round(expense * 100) / 100,
+        ...(hasExpense ? { expense: expense === null ? null : Math.round(expense * 100) / 100 } : {}),
       })
       .eq("id", id);
     if (error) throw error;
@@ -85,7 +87,7 @@ export async function updateInspection(_: ActionResult, fd: FormData): Promise<A
 
 export async function bulkAssign(_: ActionResult, fd: FormData): Promise<ActionResult> {
   try {
-    await assertAdmin();
+    await assertStaff();
     const db = await createClient();
     const ids = fd.getAll("ids").map(String);
     const agent = String(fd.get("agent_id") ?? "") || null;
@@ -111,7 +113,7 @@ export async function bulkAssign(_: ActionResult, fd: FormData): Promise<ActionR
 
 export async function approveInspection(_: ActionResult, fd: FormData): Promise<ActionResult> {
   try {
-    await assertAdmin();
+    await assertStaff();
     const id = String(fd.get("id"));
     const db = await createClient();
     const { error } = await db.rpc("approve_inspection", { p_id: id });
@@ -126,7 +128,7 @@ export async function approveInspection(_: ActionResult, fd: FormData): Promise<
 
 export async function returnInspection(_: ActionResult, fd: FormData): Promise<ActionResult> {
   try {
-    await assertAdmin();
+    await assertStaff();
     const id = String(fd.get("id"));
     const db = await createClient();
     const { error } = await db.rpc("return_inspection", { p_id: id, p_comment: String(fd.get("comment") ?? "") });
@@ -141,7 +143,7 @@ export async function returnInspection(_: ActionResult, fd: FormData): Promise<A
 
 export async function cancelInspection(_: ActionResult, fd: FormData): Promise<ActionResult> {
   try {
-    await assertAdmin();
+    await assertStaff();
     const id = String(fd.get("id"));
     const db = await createClient();
     const { error } = await db.rpc("cancel_inspection", { p_id: id });
@@ -155,7 +157,7 @@ export async function cancelInspection(_: ActionResult, fd: FormData): Promise<A
 
 export async function reopenInspection(_: ActionResult, fd: FormData): Promise<ActionResult> {
   try {
-    await assertAdmin();
+    await assertStaff();
     const id = String(fd.get("id"));
     const db = await createClient();
     const { error } = await db.rpc("reopen_inspection", { p_id: id });
@@ -168,7 +170,7 @@ export async function reopenInspection(_: ActionResult, fd: FormData): Promise<A
 }
 
 export async function deleteInspection(fd: FormData) {
-  await assertAdmin();
+  await assertStaff();
   const db = await createClient();
   const id = String(fd.get("id"));
   const { data } = await db.from("inspections").select("status").eq("id", id).single();

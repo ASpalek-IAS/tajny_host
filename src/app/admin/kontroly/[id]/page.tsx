@@ -1,11 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionForm, SubmitButton } from "@/components/client-ui";
-import { Card, CardHeader, Field, LinkButton, Notice, PageHeader, StatusBadge } from "@/components/ui";
+import {
+  Card,
+  CardHeader,
+  Field,
+  LinkButton,
+  Notice,
+  PageHeader,
+  StatusBadge,
+} from "@/components/ui";
 import { InspectionResult, ScoreSummary } from "@/components/inspection-result";
 import { InspectionForm } from "@/components/inspection-form";
 import { QuestionnaireEditor } from "@/components/questionnaire-editor";
 import { createClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/auth";
 import { loadInspectionContent } from "@/lib/inspection-data";
 import { loadQuestionLibrary } from "@/lib/question-library";
 import { fmtCZK, fmtDateTime, fmtWindow } from "@/lib/format";
@@ -40,6 +49,8 @@ export default async function AdminInspectionPage({
 }) {
   const { id } = await params;
   const { upravit } = await searchParams;
+  const me = await requireStaff();
+  const isAdmin = me.role === "admin";
   const db = await createClient();
   const { data: insp } = await db
     .from("inspections")
@@ -66,13 +77,27 @@ export default async function AdminInspectionPage({
     approved_at: string | null;
     company: { id: string; name: string };
     template: { name: string } | null;
-    branch: { name: string; address: string | null; note_for_agent: string | null };
-    agent: { id: string; full_name: string; email: string; phone: string | null } | null;
+    branch: {
+      name: string;
+      address: string | null;
+      note_for_agent: string | null;
+    };
+    agent: {
+      id: string;
+      full_name: string;
+      email: string;
+      phone: string | null;
+    } | null;
   };
 
   const [content, { data: agents }, { data: log }] = await Promise.all([
     loadInspectionContent(db, id),
-    db.from("profiles").select("id,full_name").eq("role", "agent").eq("active", true).order("full_name"),
+    db
+      .from("profiles")
+      .select("id,full_name")
+      .eq("role", "agent")
+      .eq("active", true)
+      .order("full_name"),
     db
       .from("audit_log")
       .select("id,action,details,created_at,actor:profiles(full_name)")
@@ -82,7 +107,14 @@ export default async function AdminInspectionPage({
 
   const beforeStart = i.status === "planned" || i.status === "assigned";
   const hasAnswers = Object.keys(content.answers).length > 0;
-  const library = beforeStart && !hasAnswers ? await loadQuestionLibrary(db, content.topics.map((t) => t.title)) : {};
+  // otázky kontroly upravuje jen správce
+  const canEditQuestions = isAdmin && beforeStart && !hasAnswers;
+  const library = canEditQuestions
+    ? await loadQuestionLibrary(
+        db,
+        content.topics.map((t) => t.title),
+      )
+    : {};
   const editing = upravit === "1" && i.status !== "cancelled";
 
   return (
@@ -91,19 +123,27 @@ export default async function AdminInspectionPage({
         title={`${i.company.name} – ${i.branch.name}`}
         sub={
           <span className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={i.status} /> {i.template?.name ?? i.title} · termín {fmtWindow(i.window_start, i.window_end)}
+            <StatusBadge status={i.status} /> {i.template?.name ?? i.title} ·
+            termín {fmtWindow(i.window_start, i.window_end)}
           </span>
         }
         back={{ href: "/admin/kontroly", label: "Kontroly" }}
         actions={
           <>
             {(i.status === "approved" || i.status === "submitted") && (
-              <LinkButton variant="secondary" href={`/api/inspections/${id}/pdf`} prefetch={false}>
+              <LinkButton
+                variant="secondary"
+                href={`/api/inspections/${id}/pdf`}
+                prefetch={false}
+              >
                 Stáhnout PDF
               </LinkButton>
             )}
             {!editing && !beforeStart && i.status !== "cancelled" && (
-              <LinkButton variant="secondary" href={`/admin/kontroly/${id}?upravit=1`}>
+              <LinkButton
+                variant="secondary"
+                href={`/admin/kontroly/${id}?upravit=1`}
+              >
                 Upravit odpovědi
               </LinkButton>
             )}
@@ -119,14 +159,23 @@ export default async function AdminInspectionPage({
             </Notice>
           )}
           {i.status === "approved" && !editing && (
-            <ScoreSummary score={i.score} topics={content.topics.map((t) => ({ title: t.title, score: t.score }))} />
+            <ScoreSummary
+              score={i.score}
+              topics={content.topics.map((t) => ({
+                title: t.title,
+                score: t.score,
+              }))}
+            />
           )}
 
           {editing ? (
             <>
               <Notice tone="warn">
                 Upravujete odpovědi agenta. Změny se ukládají hned
-                {i.status === "approved" ? ", skóre se přepočítá a klient uvidí novou verzi" : ""}. Každá změna se zapíše do historie.
+                {i.status === "approved"
+                  ? ", skóre se přepočítá a klient uvidí novou verzi"
+                  : ""}
+                . Každá změna se zapíše do historie.
               </Notice>
               <InspectionForm
                 inspectionId={id}
@@ -138,10 +187,11 @@ export default async function AdminInspectionPage({
                 visitAt={i.visit_at}
               />
             </>
-          ) : beforeStart && !hasAnswers ? (
+          ) : canEditQuestions ? (
             <>
               <Notice>
-                Agent zatím nezačal. Otázky této kontroly můžete upravit – změna se týká jen této kontroly, šablona zůstane beze změny.
+                Agent zatím nezačal. Otázky této kontroly můžete upravit – změna
+                se týká jen této kontroly, šablona zůstane beze změny.
               </Notice>
               <QuestionnaireEditor
                 scope="inspection"
@@ -152,7 +202,17 @@ export default async function AdminInspectionPage({
               />
             </>
           ) : (
-            <InspectionResult content={content} showScores={i.status === "approved"} />
+            <>
+              {beforeStart && !hasAnswers && (
+                <Notice>
+                  Agent zatím nezačal. Otázky kontroly může upravit jen správce.
+                </Notice>
+              )}
+              <InspectionResult
+                content={content}
+                showScores={i.status === "approved"}
+              />
+            </>
           )}
         </div>
 
@@ -167,10 +227,19 @@ export default async function AdminInspectionPage({
                     Schválit a zveřejnit klientovi
                   </SubmitButton>
                 </ActionForm>
-                <ActionForm action={returnInspection} className="space-y-2 border-t border-ink-100 pt-4">
+                <ActionForm
+                  action={returnInspection}
+                  className="space-y-2 border-t border-ink-100 pt-4"
+                >
                   <input type="hidden" name="id" value={id} />
                   <Field label="Vrátit agentovi k opravě">
-                    <textarea name="comment" rows={3} required className="input" placeholder="Co má agent opravit nebo doplnit" />
+                    <textarea
+                      name="comment"
+                      rows={3}
+                      required
+                      className="input"
+                      placeholder="Co má agent opravit nebo doplnit"
+                    />
                   </Field>
                   <SubmitButton variant="secondary" className="w-full">
                     Vrátit k opravě
@@ -186,15 +255,36 @@ export default async function AdminInspectionPage({
               <input type="hidden" name="id" value={id} />
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Termín od">
-                  <input type="date" name="window_start" defaultValue={i.window_start} className="input px-2" />
+                  <input
+                    type="date"
+                    name="window_start"
+                    defaultValue={i.window_start}
+                    className="input px-2"
+                  />
                 </Field>
                 <Field label="do">
-                  <input type="date" name="window_end" defaultValue={i.window_end} className="input px-2" />
+                  <input
+                    type="date"
+                    name="window_end"
+                    defaultValue={i.window_end}
+                    className="input px-2"
+                  />
                 </Field>
               </div>
-              <Field label="Agent" hint={beforeStart ? undefined : "Agenta už nelze změnit, kontrolu vyplňuje."}>
+              <Field
+                label="Agent"
+                hint={
+                  beforeStart
+                    ? undefined
+                    : "Agenta už nelze změnit, kontrolu vyplňuje."
+                }
+              >
                 {beforeStart ? (
-                  <select name="agent_id" defaultValue={i.agent_id ?? ""} className="input">
+                  <select
+                    name="agent_id"
+                    defaultValue={i.agent_id ?? ""}
+                    className="input"
+                  >
                     <option value="">— nepřiřazeno —</option>
                     {(agents ?? []).map((a) => (
                       <option key={a.id} value={a.id}>
@@ -204,36 +294,75 @@ export default async function AdminInspectionPage({
                   </select>
                 ) : (
                   <>
-                    <input type="hidden" name="agent_id" value={i.agent_id ?? ""} />
-                    <input disabled value={i.agent?.full_name ?? "—"} className="input" />
+                    <input
+                      type="hidden"
+                      name="agent_id"
+                      value={i.agent_id ?? ""}
+                    />
+                    <input
+                      disabled
+                      value={i.agent?.full_name ?? "—"}
+                      className="input"
+                    />
                   </>
                 )}
               </Field>
-              <Field label="Útrata agenta (Kč)">
-                <input
-                  name="expense"
-                  inputMode="decimal"
-                  defaultValue={i.expense === null ? "" : String(i.expense).replace(".", ",")}
-                  className="input tabular"
-                  placeholder="nevyplněno"
-                />
-              </Field>
+              {isAdmin && (
+                <Field label="Útrata agenta (Kč)">
+                  <input
+                    name="expense"
+                    inputMode="decimal"
+                    defaultValue={
+                      i.expense === null
+                        ? ""
+                        : String(i.expense).replace(".", ",")
+                    }
+                    className="input tabular"
+                    placeholder="nevyplněno"
+                  />
+                </Field>
+              )}
               <Field label="Zadání pro agenta">
-                <textarea name="instructions" rows={3} defaultValue={i.instructions ?? ""} className="input" />
+                <textarea
+                  name="instructions"
+                  rows={3}
+                  defaultValue={i.instructions ?? ""}
+                  className="input"
+                />
               </Field>
               <SubmitButton variant="secondary">Uložit</SubmitButton>
             </ActionForm>
           </Card>
 
           <Card className="space-y-2 p-5 text-sm">
-            <Info label="Provozovna" value={[i.branch.name, i.branch.address].filter(Boolean).join(", ")} />
-            {i.agent && <Info label="Agent" value={[i.agent.full_name, i.agent.email, i.agent.phone].filter(Boolean).join(" · ")} />}
+            <Info
+              label="Provozovna"
+              value={[i.branch.name, i.branch.address]
+                .filter(Boolean)
+                .join(", ")}
+            />
+            {i.agent && (
+              <Info
+                label="Agent"
+                value={[i.agent.full_name, i.agent.email, i.agent.phone]
+                  .filter(Boolean)
+                  .join(" · ")}
+              />
+            )}
             <Info label="Návštěva" value={fmtDateTime(i.visit_at)} />
-            <Info label="Útrata" value={i.expense === null ? "—" : fmtCZK(Number(i.expense))} />
+            {isAdmin && (
+              <Info
+                label="Útrata"
+                value={i.expense === null ? "—" : fmtCZK(Number(i.expense))}
+              />
+            )}
             <Info label="Odesláno" value={fmtDateTime(i.submitted_at)} />
             <Info label="Schváleno" value={fmtDateTime(i.approved_at)} />
             <p className="pt-1">
-              <Link href={`/admin/firmy/${i.company.id}`} className="text-brand-700 hover:underline">
+              <Link
+                href={`/admin/firmy/${i.company.id}`}
+                className="text-brand-700 hover:underline"
+              >
                 Otevřít firmu →
               </Link>
             </p>
@@ -243,7 +372,12 @@ export default async function AdminInspectionPage({
             {i.status !== "approved" && i.status !== "cancelled" && (
               <ActionForm action={cancelInspection}>
                 <input type="hidden" name="id" value={id} />
-                <SubmitButton variant="danger" size="sm" className="w-full" confirm="Opravdu zrušit tuto kontrolu?">
+                <SubmitButton
+                  variant="danger"
+                  size="sm"
+                  className="w-full"
+                  confirm="Opravdu zrušit tuto kontrolu?"
+                >
                   Zrušit kontrolu
                 </SubmitButton>
               </ActionForm>
@@ -255,7 +389,11 @@ export default async function AdminInspectionPage({
                   variant="secondary"
                   size="sm"
                   className="w-full"
-                  confirm={i.status === "approved" ? "Klient výsledek přestane vidět, dokud ho znovu neschválíte. Pokračovat?" : undefined}
+                  confirm={
+                    i.status === "approved"
+                      ? "Klient výsledek přestane vidět, dokud ho znovu neschválíte. Pokračovat?"
+                      : undefined
+                  }
                 >
                   Vrátit do stavu „Ke schválení“
                 </SubmitButton>
@@ -264,7 +402,12 @@ export default async function AdminInspectionPage({
             {(beforeStart || i.status === "cancelled") && (
               <form action={deleteInspection}>
                 <input type="hidden" name="id" value={id} />
-                <SubmitButton variant="ghost" size="sm" className="w-full text-bad!" confirm="Kontrolu nenávratně smazat?">
+                <SubmitButton
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-bad!"
+                  confirm="Kontrolu nenávratně smazat?"
+                >
                   Smazat kontrolu
                 </SubmitButton>
               </form>
@@ -276,15 +419,21 @@ export default async function AdminInspectionPage({
             <ol className="space-y-3 p-5 text-sm">
               {(log ?? []).map((l) => (
                 <li key={l.id}>
-                  <p className="font-medium text-ink-800">{ACTION_LABEL[l.action] ?? l.action}</p>
+                  <p className="font-medium text-ink-800">
+                    {ACTION_LABEL[l.action] ?? l.action}
+                  </p>
                   <p className="text-xs text-ink-500">
                     {fmtDateTime(l.created_at)}
-                    {(l.actor as unknown as { full_name: string } | null)?.full_name &&
+                    {(l.actor as unknown as { full_name: string } | null)
+                      ?.full_name &&
                       ` · ${(l.actor as unknown as { full_name: string }).full_name}`}
                   </p>
-                  {l.action === "returned" && (l.details as { comment?: string })?.comment && (
-                    <p className="mt-0.5 text-xs text-ink-600">„{(l.details as { comment: string }).comment}“</p>
-                  )}
+                  {l.action === "returned" &&
+                    (l.details as { comment?: string })?.comment && (
+                      <p className="mt-0.5 text-xs text-ink-600">
+                        „{(l.details as { comment: string }).comment}“
+                      </p>
+                    )}
                 </li>
               ))}
             </ol>

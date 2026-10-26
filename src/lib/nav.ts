@@ -11,6 +11,14 @@ export function navFor(role: Role, pendingApprovals = 0): NavItem[] {
       { href: "/admin/reporty", label: "Reporty" },
       { href: "/admin/ucetnictvi", label: "Účetnictví" },
     ];
+  if (role === "controller")
+    return [
+      { href: "/admin", label: "Přehled", exact: true },
+      { href: "/admin/kontroly", label: "Kontroly", badge: pendingApprovals },
+      { href: "/admin/firmy", label: "Firmy" },
+      { href: "/admin/uzivatele", label: "Agenti" },
+      { href: "/admin/reporty", label: "Reporty" },
+    ];
   if (role === "client")
     return [
       { href: "/klient", label: "Přehled", exact: true },

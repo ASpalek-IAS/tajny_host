@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Table, Td, Th } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/auth";
 
 export default async function CompaniesPage() {
+  const me = await requireStaff();
   const db = await createClient();
   const { data } = await db
     .from("companies")
@@ -20,7 +22,7 @@ export default async function CompaniesPage() {
   }[];
   return (
     <>
-      <PageHeader title="Firmy" sub="Klienti agentury" actions={<LinkButton href="/admin/firmy/nova">Nová firma</LinkButton>} />
+      <PageHeader title="Firmy" sub="Klienti agentury" actions={me.role === "admin" ? <LinkButton href="/admin/firmy/nova">Nová firma</LinkButton> : undefined} />
       <Card>
         {rows.length === 0 ? (
           <EmptyState title="Zatím žádné firmy">Začněte založením první firmy.</EmptyState>
@@ -31,7 +33,7 @@ export default async function CompaniesPage() {
                 <Th>Firma</Th>
                 <Th>Kontakt</Th>
                 <Th className="text-right">Provozovny</Th>
-                <Th className="text-right">Uživatelé</Th>
+                {me.role === "admin" && <Th className="text-right">Uživatelé</Th>}
                 <Th className="text-right">Kontroly</Th>
               </tr>
             </thead>
@@ -47,7 +49,7 @@ export default async function CompaniesPage() {
                   </Td>
                   <Td className="text-ink-600">{c.contact_name ?? "—"}</Td>
                   <Td className="tabular text-right">{c.branches[0]?.count ?? 0}</Td>
-                  <Td className="tabular text-right">{c.profiles[0]?.count ?? 0}</Td>
+                  {me.role === "admin" && <Td className="tabular text-right">{c.profiles[0]?.count ?? 0}</Td>}
                   <Td className="tabular text-right">{c.inspections[0]?.count ?? 0}</Td>
                 </tr>
               ))}

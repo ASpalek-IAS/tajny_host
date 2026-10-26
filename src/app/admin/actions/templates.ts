@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { assertAdmin } from "./guard";
+import { assertAdmin, assertStaff } from "./guard";
 import { generateScheduled } from "@/lib/schedule";
 import { notifyAssigned } from "@/lib/notify";
 import { errorMessage, type ActionResult } from "@/lib/action-result";
@@ -59,7 +59,7 @@ export async function updateTemplate(_: ActionResult, fd: FormData): Promise<Act
 
 export async function saveSchedule(_: ActionResult, fd: FormData): Promise<ActionResult> {
   try {
-    await assertAdmin();
+    await assertStaff();
     const db = await createClient();
     const id = String(fd.get("id") ?? "") || null;
     const companyId = String(fd.get("company_id"));
@@ -97,7 +97,7 @@ export async function saveSchedule(_: ActionResult, fd: FormData): Promise<Actio
 }
 
 export async function deleteSchedule(fd: FormData) {
-  await assertAdmin();
+  await assertStaff();
   const db = await createClient();
   const companyId = String(fd.get("company_id"));
   await db.from("schedules").delete().eq("id", String(fd.get("id")));

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
+import { isStaff } from "@/lib/types";
 import { loadInspectionContent } from "@/lib/inspection-data";
 import { renderReportPdf, type HistoryPoint } from "@/lib/pdf/report";
 import { APP_NAME } from "@/lib/email";
@@ -48,7 +49,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     window_start: string;
   } | null = null;
 
-  if (profile.role === "admin") {
+  if (isStaff(profile.role)) {
     const { data } = await db
       .from("inspections")
       .select("title,visit_at,approved_at,score,status,company_id,branch_id,template_id,window_start,branch:branches(name,address),template:templates(name)")
@@ -73,13 +74,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // Vývoj: posledních až 8 schválených kontrol stejné provozovny podle stejného dotazníku
   let history: HistoryPoint[] = [];
   if (base.template_id) {
-    const src = profile.role === "admin" ? "inspections" : "client_inspections";
+    const src = isStaff(profile.role) ? "inspections" : "client_inspections";
     const { data: prev } = await db
       .from(src)
       .select("id,visit_at,window_start,score")
       .eq("branch_id", base.branch_id)
       .eq("template_id", base.template_id)
-      .eq("status", profile.role === "admin" ? "approved" : "done");
+      .eq("status", isStaff(profile.role) ? "approved" : "done");
     const cur = (base.visit_at ?? base.window_start).slice(0, 10);
     history = (prev ?? [])
       .map((p) => ({ id: p.id as string, date: ((p.visit_at ?? p.window_start) as string).slice(0, 10), score: p.score as number | null }))

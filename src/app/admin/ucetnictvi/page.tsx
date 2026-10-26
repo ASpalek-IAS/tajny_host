@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card, EmptyState, PageHeader, Stat, Table, Td, Th, cx } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/auth";
 import { addDays, fmtCZK, fmtDate, monthBounds, pragueDate, todayISO } from "@/lib/format";
 
 type SP = { od?: string; do?: string; q?: string; skryt?: string; f?: string };
@@ -11,6 +12,7 @@ type Row = { id: string; name: string; email: string; active: boolean; visits: n
 const DONE = ["submitted", "approved"];
 
 export default async function AccountingPage({ searchParams }: { searchParams: Promise<SP> }) {
+  await requireAdmin();
   const sp = await searchParams;
   const month = monthBounds(todayISO());
   const from = sp.od || month.from;

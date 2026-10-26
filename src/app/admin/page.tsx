@@ -3,19 +3,23 @@ import { Versus, type VersusParams } from "./versus";
 import { InspectionTable, INSPECTION_LIST_SELECT, type InspectionListRow } from "@/components/inspection-table";
 import { createClient } from "@/lib/supabase/server";
 import { addDays, fmtScore, todayISO } from "@/lib/format";
+import { requireStaff } from "@/lib/auth";
 
 export default async function AdminHome({ searchParams }: { searchParams: Promise<VersusParams & { tab?: string }> }) {
   const sp = await searchParams;
-  const tabs = (
+  const me = await requireStaff();
+  // Versus vidí jen správce
+  const versus = me.role === "admin" && sp.tab === "versus";
+  const tabs = me.role !== "admin" ? null : (
     <Tabs
-      active={sp.tab === "versus" ? "versus" : "prehled"}
+      active={versus ? "versus" : "prehled"}
       tabs={[
         { key: "prehled", label: "Přehled", href: "/admin" },
         { key: "versus", label: "Versus", href: "/admin?tab=versus" },
       ]}
     />
   );
-  if (sp.tab === "versus") {
+  if (versus) {
     return (
       <>
         <PageHeader title="Versus" sub="Porovnání firem a provozoven podle schválených kontrol" />

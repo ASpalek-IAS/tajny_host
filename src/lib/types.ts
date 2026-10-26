@@ -1,4 +1,7 @@
-export type Role = "admin" | "client" | "agent";
+export type Role = "admin" | "controller" | "client" | "agent";
+
+/** Správce nebo kontrolor – pracují v administraci. */
+export const isStaff = (role: Role | undefined | null) => role === "admin" || role === "controller";
 
 export type InspectionStatus =
   | "planned"
@@ -123,6 +126,7 @@ export const STATUS_LABEL: Record<InspectionStatus, string> = {
 
 export const ROLE_LABEL: Record<Role, string> = {
   admin: "Správce",
+  controller: "Kontrolor",
   client: "Klient",
   agent: "Agent",
 };

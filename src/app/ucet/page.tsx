@@ -6,7 +6,7 @@ import { navFor } from "@/lib/nav";
 import { changePassword, updateAccount } from "./actions";
 
 export default async function AccountPage() {
-  const profile = await requireRole("admin", "client", "agent");
+  const profile = await requireRole("admin", "controller", "client", "agent");
   return (
     <AppShell profile={profile} nav={navFor(profile.role)}>
       <PageHeader title="Můj účet" sub={profile.email} />

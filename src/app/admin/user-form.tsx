@@ -24,7 +24,7 @@ export function UserDialog({
 }) {
   const [link, setLink] = useState<string | null>(null);
   const [access, setAccess] = useState<"all" | "restricted">(user && !user.all_branches ? "restricted" : "all");
-  const title = user ? "Upravit uživatele" : role === "client" ? "Nový uživatel klienta" : role === "agent" ? "Nový agent" : "Nový správce";
+  const title = user ? "Upravit uživatele" : role === "client" ? "Nový uživatel klienta" : role === "agent" ? "Nový agent" : role === "controller" ? "Nový kontrolor" : "Nový správce";
 
   return (
     <Dialog
