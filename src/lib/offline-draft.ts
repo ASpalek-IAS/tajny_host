@@ -7,7 +7,14 @@
  */
 
 export type PendingAnswer = { value: unknown; comment: string; t: number };
-export type Draft = { answers: Record<string, PendingAnswer>; visit?: { value: string | null; t: number } };
+export type Draft = {
+  answers: Record<string, PendingAnswer>;
+  visit?: { value: string | null; t: number };
+  expense?: { value: number | null; t: number };
+};
+
+/** Počet neodeslaných změn v záloze. */
+export const draftSize = (d: Draft) => Object.keys(d.answers).length + (d.visit ? 1 : 0) + (d.expense ? 1 : 0);
 
 const key = (inspectionId: string) => `ms-draft:${inspectionId}`;
 
@@ -16,7 +23,7 @@ export function readDraft(inspectionId: string): Draft {
     const raw = window.localStorage.getItem(key(inspectionId));
     if (!raw) return { answers: {} };
     const d = JSON.parse(raw) as Draft;
-    return { answers: d.answers ?? {}, visit: d.visit };
+    return { answers: d.answers ?? {}, visit: d.visit, expense: d.expense };
   } catch {
     return { answers: {} };
   }
@@ -24,7 +31,7 @@ export function readDraft(inspectionId: string): Draft {
 
 export function writeDraft(inspectionId: string, d: Draft) {
   try {
-    if (Object.keys(d.answers).length === 0 && !d.visit) window.localStorage.removeItem(key(inspectionId));
+    if (draftSize(d) === 0) window.localStorage.removeItem(key(inspectionId));
     else window.localStorage.setItem(key(inspectionId), JSON.stringify(d));
   } catch {
     // úložiště není k dispozici (anonymní režim apod.) – formulář funguje dál, jen bez zálohy

@@ -56,3 +56,27 @@ export function scoreTone(s: number | null | undefined): "good" | "mid" | "bad" 
   if (s >= 65) return "mid";
   return "bad";
 }
+
+export function fmtCZK(n: number | null | undefined) {
+  if (n === null || n === undefined) return "—";
+  const whole = Number.isInteger(Math.round(n * 100) / 100);
+  return n.toLocaleString("cs-CZ", {
+    style: "currency",
+    currency: "CZK",
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/** První a poslední den měsíce, ve kterém leží datum (YYYY-MM-DD). */
+export function monthBounds(iso: string) {
+  const [y, m] = iso.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const mm = String(m).padStart(2, "0");
+  return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(last).padStart(2, "0")}` };
+}
+
+/** Datum (YYYY-MM-DD) okamžiku v pražském čase */
+export function pragueDate(d: string | Date) {
+  return new Date(d).toLocaleDateString("sv-SE", { timeZone: TZ });
+}

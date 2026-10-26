@@ -58,6 +58,9 @@ export async function updateInspection(_: ActionResult, fd: FormData): Promise<A
     const ws = String(fd.get("window_start"));
     const we = String(fd.get("window_end") ?? "") || ws;
     if (we < ws) return { error: "Konec termínu musí být po začátku." };
+    const rawExpense = String(fd.get("expense") ?? "").replace(/\s/g, "").replace(",", ".");
+    const expense = rawExpense === "" ? null : Number(rawExpense);
+    if (expense !== null && (!Number.isFinite(expense) || expense < 0)) return { error: "Útrata musí být kladné číslo." };
     if (agent !== before?.agent_id && before && !["planned", "assigned"].includes(before.status)) {
       return { error: "Agenta lze změnit jen dokud kontrolu nezačal vyplňovat." };
     }
@@ -68,6 +71,7 @@ export async function updateInspection(_: ActionResult, fd: FormData): Promise<A
         window_end: we,
         agent_id: agent,
         instructions: String(fd.get("instructions") ?? "").trim() || null,
+        expense: expense === null ? null : Math.round(expense * 100) / 100,
       })
       .eq("id", id);
     if (error) throw error;

@@ -9,6 +9,7 @@ export function navFor(role: Role, pendingApprovals = 0): NavItem[] {
       { href: "/admin/firmy", label: "Firmy" },
       { href: "/admin/uzivatele", label: "Agenti a správci" },
       { href: "/admin/reporty", label: "Reporty" },
+      { href: "/admin/ucetnictvi", label: "Účetnictví" },
     ];
   if (role === "client")
     return [

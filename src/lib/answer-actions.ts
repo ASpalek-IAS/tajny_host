@@ -38,6 +38,17 @@ export async function saveVisitAt(inspectionId: string, isoOrNull: string | null
   }
 }
 
+export async function saveExpense(inspectionId: string, amount: number | null): Promise<ActionResult> {
+  try {
+    const db = await createClient();
+    const { error } = await db.rpc("set_expense", { p_id: inspectionId, p_amount: amount });
+    if (error) throw error;
+    return { ok: true };
+  } catch (e) {
+    return { error: errorMessage(e) };
+  }
+}
+
 export type SubmitResult = ActionResult & { missing?: { question_id: string | null; reason: string }[] };
 
 export async function submitInspection(inspectionId: string): Promise<SubmitResult> {

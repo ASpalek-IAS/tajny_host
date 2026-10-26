@@ -8,7 +8,7 @@ import { QuestionnaireEditor } from "@/components/questionnaire-editor";
 import { createClient } from "@/lib/supabase/server";
 import { loadInspectionContent } from "@/lib/inspection-data";
 import { loadQuestionLibrary } from "@/lib/question-library";
-import { fmtDateTime, fmtWindow } from "@/lib/format";
+import { fmtCZK, fmtDateTime, fmtWindow } from "@/lib/format";
 import type { InspectionStatus } from "@/lib/types";
 import {
   approveInspection,
@@ -59,6 +59,7 @@ export default async function AdminInspectionPage({
     agent_id: string | null;
     instructions: string | null;
     visit_at: string | null;
+    expense: number | null;
     score: number | null;
     return_comment: string | null;
     submitted_at: string | null;
@@ -208,6 +209,15 @@ export default async function AdminInspectionPage({
                   </>
                 )}
               </Field>
+              <Field label="Útrata agenta (Kč)">
+                <input
+                  name="expense"
+                  inputMode="decimal"
+                  defaultValue={i.expense === null ? "" : String(i.expense).replace(".", ",")}
+                  className="input tabular"
+                  placeholder="nevyplněno"
+                />
+              </Field>
               <Field label="Zadání pro agenta">
                 <textarea name="instructions" rows={3} defaultValue={i.instructions ?? ""} className="input" />
               </Field>
@@ -219,6 +229,7 @@ export default async function AdminInspectionPage({
             <Info label="Provozovna" value={[i.branch.name, i.branch.address].filter(Boolean).join(", ")} />
             {i.agent && <Info label="Agent" value={[i.agent.full_name, i.agent.email, i.agent.phone].filter(Boolean).join(" · ")} />}
             <Info label="Návštěva" value={fmtDateTime(i.visit_at)} />
+            <Info label="Útrata" value={i.expense === null ? "—" : fmtCZK(Number(i.expense))} />
             <Info label="Odesláno" value={fmtDateTime(i.submitted_at)} />
             <Info label="Schváleno" value={fmtDateTime(i.approved_at)} />
             <p className="pt-1">

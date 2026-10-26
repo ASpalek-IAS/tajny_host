@@ -4,10 +4,10 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, Notice, cx } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
-import { saveAnswer, saveVisitAt, submitInspection } from "@/lib/answer-actions";
+import { saveAnswer, saveExpense, saveVisitAt, submitInspection } from "@/lib/answer-actions";
 import { questionFraction, type Answer, type Question, type Topic } from "@/lib/types";
 import { toLocalInput } from "@/lib/format";
-import { clearDraft, readDraft, writeDraft, type Draft } from "@/lib/offline-draft";
+import { clearDraft, draftSize, readDraft, writeDraft, type Draft } from "@/lib/offline-draft";
 
 type FileItem = {
   id: string;
@@ -28,6 +28,7 @@ export function InspectionForm({
   answers,
   attachments,
   visitAt,
+  expense = null,
 }: {
   inspectionId: string;
   mode: "agent" | "admin";
@@ -36,6 +37,8 @@ export function InspectionForm({
   answers: Record<string, Answer>;
   attachments: FileItem[];
   visitAt: string | null;
+  /** útrata v Kč – vyplňuje jen agent (správce ji upravuje v detailech kontroly) */
+  expense?: number | null;
 }) {
   const router = useRouter();
   const [values, setValues] = useState<Record<string, unknown>>(() =>
@@ -46,6 +49,7 @@ export function InspectionForm({
   );
   const [files, setFiles] = useState<FileItem[]>(attachments);
   const [visit, setVisit] = useState(toLocalInput(visitAt));
+  const [spent, setSpent] = useState(expense === null ? "" : String(expense).replace(".", ","));
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [missing, setMissing] = useState<Missing[]>([]);
@@ -66,7 +70,7 @@ export function InspectionForm({
 
   const storeDraft = useCallback(() => {
     writeDraft(inspectionId, draft.current);
-    setPendingCount(Object.keys(draft.current.answers).length + (draft.current.visit ? 1 : 0));
+    setPendingCount(draftSize(draft.current));
   }, [inspectionId]);
 
   /** Pošle na server jednu odpověď ze zálohy. Vrací false při výpadku sítě. */
@@ -116,12 +120,29 @@ export function InspectionForm({
     }
   }, [inspectionId, storeDraft]);
 
+  const pushExpense = useCallback(async (): Promise<boolean> => {
+    const item = draft.current.expense;
+    if (!item) return true;
+    try {
+      const r = await saveExpense(inspectionId, item.value);
+      if (draft.current.expense?.t === item.t) delete draft.current.expense;
+      storeDraft();
+      if (r.error) setError(r.error);
+      setOnline(true);
+      return true;
+    } catch {
+      setOnline(false);
+      return false;
+    }
+  }, [inspectionId, storeDraft]);
+
   /** Odešle všechno, co je v záloze. */
   const flush = useCallback(async () => {
     if (flushing.current) return;
     flushing.current = true;
     try {
       if (!(await pushVisit())) return;
+      if (!(await pushExpense())) return;
       for (const qid of Object.keys(draft.current.answers)) {
         if (timers.current[qid]) continue; // ještě se píše, odešle se samo
         if (!(await pushAnswer(qid))) return;
@@ -129,20 +150,21 @@ export function InspectionForm({
     } finally {
       flushing.current = false;
     }
-  }, [pushAnswer, pushVisit]);
+  }, [pushAnswer, pushVisit, pushExpense]);
 
   // Po otevření: obnovit neodeslané změny ze zálohy a zkusit je poslat
   useEffect(() => {
     const d = readDraft(inspectionId);
     draft.current = d;
     const qids = Object.keys(d.answers);
-    if (qids.length || d.visit) {
+    if (draftSize(d)) {
       /* eslint-disable react-hooks/set-state-in-effect */
       setValues((s) => ({ ...s, ...Object.fromEntries(qids.map((q) => [q, d.answers[q].value])) }));
       setComments((s) => ({ ...s, ...Object.fromEntries(qids.map((q) => [q, d.answers[q].comment])) }));
       if (d.visit) setVisit(toLocalInput(d.visit.value));
-      setRestored(qids.length + (d.visit ? 1 : 0));
-      setPendingCount(qids.length + (d.visit ? 1 : 0));
+      if (d.expense) setSpent(d.expense.value === null ? "" : String(d.expense.value).replace(".", ","));
+      setRestored(draftSize(d));
+      setPendingCount(draftSize(d));
       /* eslint-enable react-hooks/set-state-in-effect */
       flush();
     }
@@ -158,7 +180,7 @@ export function InspectionForm({
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
     const iv = setInterval(() => {
-      if (Object.keys(draft.current.answers).length || draft.current.visit) flush();
+      if (draftSize(draft.current)) flush();
     }, 15000);
     return () => {
       window.removeEventListener("online", goOnline);
@@ -194,10 +216,18 @@ export function InspectionForm({
     storeDraft();
   };
 
+  const changeSpent = (v: string) => {
+    setSpent(v);
+    const n = v.trim() === "" ? null : Number(v.replace(/\s/g, "").replace(",", "."));
+    if (n !== null && (!Number.isFinite(n) || n < 0)) return; // neplatné číslo neukládat
+    draft.current.expense = { value: n === null ? null : Math.round(n * 100) / 100, t: ++seq.current };
+    storeDraft();
+  };
+
   // varování při zavření s neodeslanými změnami (v záloze ale zůstanou)
   useEffect(() => {
     const h = (e: BeforeUnloadEvent) => {
-      if (inFlight.current > 0 || Object.keys(draft.current.answers).length > 0) e.preventDefault();
+      if (inFlight.current > 0 || draftSize(draft.current) > 0) e.preventDefault();
     };
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
@@ -224,7 +254,7 @@ export function InspectionForm({
         delete timers.current[qid];
       }
       await flush();
-      if (Object.keys(draft.current.answers).length || draft.current.visit) {
+      if (draftSize(draft.current)) {
         setError("Některé odpovědi se zatím nepodařilo uložit, protože chybí připojení. Odešlete kontrolu, až budete online – odpovědi jsou bezpečně uložené v zařízení.");
         return;
       }
@@ -273,8 +303,8 @@ export function InspectionForm({
         </div>
       )}
 
-      <Card className={cx("mb-4 p-5", missingIds.has(null) && "ring-2 ring-bad")}>
-        <label id="visit" className="block max-w-xs">
+      <Card className={cx("mb-4 flex flex-wrap gap-4 p-5", missingIds.has(null) && "ring-2 ring-bad")}>
+        <label id="visit" className="block w-full max-w-xs">
           <span className="label">Datum a čas návštěvy {mode === "agent" && <span className="text-bad!">*</span>}</span>
           <input
             type="datetime-local"
@@ -287,6 +317,20 @@ export function InspectionForm({
             }}
           />
         </label>
+        {mode === "agent" && (
+          <label className="block w-full max-w-[12rem]">
+            <span className="label">Útrata (Kč)</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              className="input tabular"
+              placeholder="např. 245"
+              value={spent}
+              onChange={(e) => changeSpent(e.target.value)}
+              onBlur={() => flush()}
+            />
+          </label>
+        )}
       </Card>
 
       <nav className="mb-4 flex gap-2 overflow-x-auto pb-1">

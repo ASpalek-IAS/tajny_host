@@ -14,7 +14,7 @@ export default async function AgentInspectionPage({ params }: { params: Promise<
   const db = await createClient();
   const { data } = await db
     .from("inspections")
-    .select("id,title,status,window_start,window_end,instructions,visit_at,return_comment,agent_id,company:companies(name),branch:branches(name,address,note_for_agent)")
+    .select("id,title,status,window_start,window_end,instructions,visit_at,expense,return_comment,agent_id,company:companies(name),branch:branches(name,address,note_for_agent)")
     .eq("id", id)
     .eq("agent_id", profile.id)
     .maybeSingle();
@@ -27,6 +27,7 @@ export default async function AgentInspectionPage({ params }: { params: Promise<
     window_end: string;
     instructions: string | null;
     visit_at: string | null;
+    expense: number | null;
     return_comment: string | null;
     company: { name: string };
     branch: { name: string; address: string | null; note_for_agent: string | null };
@@ -100,6 +101,7 @@ export default async function AgentInspectionPage({ params }: { params: Promise<
           answers={content.answers}
           attachments={content.attachments}
           visitAt={i.visit_at}
+          expense={i.expense === null ? null : Number(i.expense)}
         />
       ) : (
         <InspectionResult content={content} showScores={false} />
