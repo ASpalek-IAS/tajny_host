@@ -26,7 +26,13 @@ import {
 } from "@/lib/types";
 import type { ActionResult } from "@/lib/action-result";
 
-export type LibraryQuestion = Question & { template_name: string; company_name: string; source?: "template" | "history" };
+export type LibraryQuestion = Question & {
+  template_name: string;
+  company_name: string;
+  source?: "template" | "history";
+  /** všechny šablony, ve kterých se stejné znění otázky vyskytuje */
+  sources?: { template_name: string; company_name: string }[];
+};
 
 export function QuestionnaireEditor({
   scope,
@@ -410,7 +416,8 @@ function NewQuestion({
     return (
       <div className="space-y-4">
         <Notice>
-          Převzato ze šablony <strong>{picked.template_name}</strong>
+          Převzato {(picked.sources?.length ?? 1) > 1 ? "ze šablon" : "ze šablony"}{" "}
+          <strong>{(picked.sources ?? [picked]).map((s) => s.template_name).join(", ")}</strong>
           {picked.company_name ? ` (${picked.company_name})` : ""}
           {picked.source === "history" ? " – dřívější znění použité v kontrolách" : ""}. Před uložením můžete otázku upravit.
         </Notice>
@@ -426,7 +433,10 @@ function NewQuestion({
   }
 
   const shown = library.filter((q) =>
-    (q.text + " " + q.template_name + " " + q.company_name).toLowerCase().includes(filter.trim().toLowerCase()),
+    [q.text, ...(q.sources ?? [q]).flatMap((s) => [s.template_name, s.company_name])]
+      .join(" ")
+      .toLowerCase()
+      .includes(filter.trim().toLowerCase()),
   );
 
   return (
@@ -467,9 +477,17 @@ function NewQuestion({
                 <button type="button" onClick={() => setPicked(q)} className="block w-full px-4 py-2.5 text-left hover:bg-ink-50">
                   <span className="block text-sm text-ink-900">{q.text}</span>
                   <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <Badge tone="brand">{q.template_name}</Badge>
+                    {(q.sources ?? [q]).map((s) => (
+                      <Badge key={s.template_name} tone="brand">
+                        {s.template_name}
+                      </Badge>
+                    ))}
                     {q.source === "history" && <Badge tone="mid">dřívější znění</Badge>}
-                    {q.company_name && <span className="text-xs text-ink-500">{q.company_name}</span>}
+                    {[...new Set((q.sources ?? [q]).map((s) => s.company_name).filter(Boolean))].map((c) => (
+                      <span key={c} className="text-xs text-ink-500">
+                        {c}
+                      </span>
+                    ))}
                     <span className="text-xs text-ink-400">
                       · {QUESTION_TYPE_LABEL[q.type]}
                       {isScored(q) ? ` · váha ${Number(q.weight)}` : ""}
