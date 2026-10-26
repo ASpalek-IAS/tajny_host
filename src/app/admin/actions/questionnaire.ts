@@ -58,15 +58,33 @@ export async function addTopic(scope: Scope, parentId: string, title: string, we
   });
 }
 
-export async function updateTopic(scope: Scope, parentId: string, topicId: string, title: string, weight: number) {
-  return run(scope, parentId, async () => {
+export async function updateTopic(
+  scope: Scope,
+  parentId: string,
+  topicId: string,
+  title: string,
+  weight: number,
+  propagate = false,
+): Promise<ActionResult> {
+  let synced = 0;
+  const r = await run(scope, parentId, async () => {
     const db = await createClient();
     const { error } = await db
       .from(T[scope].topics)
       .update({ title: title.trim() || "Téma", weight: Math.max(0, weight || 0) })
       .eq("id", topicId);
     if (error) throw error;
+    if (scope === "template" && propagate) {
+      const { data, error: e2 } = await db.rpc("propagate_template_topic", { p_tt: topicId });
+      if (e2) throw e2;
+      synced = Number(data ?? 0);
+    }
   });
+  if (r.ok && scope === "template" && propagate) {
+    revalidatePath("/admin/kontroly", "layout");
+    return { ok: true, message: `Téma uloženo a upraveno ve ${synced} existujících kontrolách.` };
+  }
+  return r;
 }
 
 export async function deleteTopic(scope: Scope, parentId: string, topicId: string) {
@@ -160,12 +178,39 @@ export async function addQuestion(scope: Scope, parentId: string, topicId: strin
   });
 }
 
-export async function updateQuestion(scope: Scope, parentId: string, questionId: string, q: QuestionInput) {
-  return run(scope, parentId, async () => {
+export async function updateQuestion(
+  scope: Scope,
+  parentId: string,
+  questionId: string,
+  q: QuestionInput,
+  propagate = false,
+): Promise<ActionResult> {
+  let synced = 0;
+  let typeChanged = false;
+  const r = await run(scope, parentId, async () => {
     const db = await createClient();
+    if (scope === "template" && propagate) {
+      const { data: before } = await db.from("template_questions").select("type").eq("id", questionId).single();
+      typeChanged = !!before && before.type !== q.type;
+      if (typeChanged) {
+        throw new Error(
+          "Typ odpovědi nelze zpětně změnit u kontrol, které už byly vyplněné. Uložte změnu jen pro nové kontroly, nebo ponechte původní typ.",
+        );
+      }
+    }
     const { error } = await db.from(T[scope].questions).update(clean(q)).eq("id", questionId);
     if (error) throw error;
+    if (scope === "template" && propagate) {
+      const { data, error: e2 } = await db.rpc("propagate_template_question", { p_tq: questionId });
+      if (e2) throw e2;
+      synced = Number(data ?? 0);
+    }
   });
+  if (r.ok && scope === "template" && propagate) {
+    revalidatePath("/admin/kontroly", "layout");
+    return { ok: true, message: `Otázka uložena a upravena ve ${synced} existujících kontrolách.` };
+  }
+  return r;
 }
 
 export async function deleteQuestion(scope: Scope, parentId: string, questionId: string) {

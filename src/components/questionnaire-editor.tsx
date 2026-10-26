@@ -26,29 +26,41 @@ import {
 } from "@/lib/types";
 import type { ActionResult } from "@/lib/action-result";
 
+export type LibraryQuestion = Question & { template_name: string; company_name: string };
+
 export function QuestionnaireEditor({
   scope,
   parentId,
   topics,
   questions,
   readOnly,
+  usage = 0,
+  library = {},
 }: {
   scope: Scope;
   parentId: string;
   topics: Topic[];
   questions: Question[];
   readOnly?: boolean;
+  /** počet existujících kontrol z této šablony */
+  usage?: number;
+  /** otázky z témat se stejným názvem v jiných šablonách, klíč = název tématu malými písmeny */
+  library?: Record<string, LibraryQuestion[]>;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const canSync = scope === "template" && usage > 0;
 
   const exec = (fn: () => Promise<ActionResult>, after?: () => void) =>
     start(async () => {
       setError(null);
+      setInfo(null);
       const r = await fn();
       if (r.error) setError(r.error);
       else {
+        if (r.message) setInfo(r.message);
         after?.();
         router.refresh();
       }
@@ -59,6 +71,7 @@ export function QuestionnaireEditor({
   return (
     <div className={cx("space-y-4", pending && "opacity-70")}>
       {error && <Notice tone="error">{error}</Notice>}
+      {info && <Notice tone="success">{info}</Notice>}
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-ink-600">
         <span>
@@ -111,7 +124,10 @@ export function QuestionnaireEditor({
                   <TopicDialog
                     title="Upravit téma"
                     initial={t}
-                    onSave={(title, weight, close) => exec(() => updateTopic(scope, parentId, t.id, title, weight), close)}
+                    usage={canSync ? usage : 0}
+                    onSave={(title, weight, close, propagate) =>
+                      exec(() => updateTopic(scope, parentId, t.id, title, weight, propagate), close)
+                    }
                     trigger={(open) => (
                       <Button variant="ghost" size="sm" onClick={open}>
                         Upravit
@@ -164,7 +180,10 @@ export function QuestionnaireEditor({
                       <QuestionDialog
                         title="Upravit otázku"
                         initial={q}
-                        onSave={(input, close) => exec(() => updateQuestion(scope, parentId, q.id, input), close)}
+                        usage={canSync ? usage : 0}
+                        onSave={(input, close, propagate) =>
+                          exec(() => updateQuestion(scope, parentId, q.id, input, propagate), close)
+                        }
                         trigger={(open) => (
                           <Button variant="ghost" size="sm" onClick={open}>
                             Upravit
@@ -190,6 +209,10 @@ export function QuestionnaireEditor({
               <div className="border-t border-ink-100 px-5 py-3">
                 <QuestionDialog
                   title={`Nová otázka – ${t.title}`}
+                  library={(library[t.title.trim().toLowerCase()] ?? []).filter(
+                    (lq) => !qs.some((x) => x.text.trim().toLowerCase() === lq.text.trim().toLowerCase()),
+                  )}
+                  topicTitle={t.title}
                   onSave={(input, close) => exec(() => addQuestion(scope, parentId, t.id, input), close)}
                   trigger={(open) => (
                     <Button variant="secondary" size="sm" onClick={open}>
@@ -247,16 +270,41 @@ function IconBtn({
   );
 }
 
+function SyncChoice({ usage, what }: { usage: number; what: string }) {
+  if (!usage) return null;
+  return (
+    <fieldset className="space-y-2 rounded-lg border border-ink-200 p-4">
+      <legend className="px-1 text-sm font-medium text-ink-700">Kde změnu použít</legend>
+      <label className="flex items-start gap-2 text-sm">
+        <input type="radio" name="propagate" value="no" defaultChecked className="mt-0.5" />
+        <span>Jen u nových kontrol</span>
+      </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input type="radio" name="propagate" value="yes" className="mt-0.5" />
+        <span>
+          Také zpětně u všech existujících kontrol ({usage}) včetně dokončených
+          <span className="hint block">
+            Upraví se {what} ve všech kontrolách z této šablony. Odpovědi zůstanou, skóre schválených kontrol se přepočítá a
+            klient uvidí novou verzi.
+          </span>
+        </span>
+      </label>
+    </fieldset>
+  );
+}
+
 function TopicDialog({
   title,
   initial,
   onSave,
   trigger,
+  usage = 0,
 }: {
   title: string;
   initial?: Topic;
-  onSave: (title: string, weight: number, close: () => void) => void;
+  onSave: (title: string, weight: number, close: () => void, propagate: boolean) => void;
   trigger: (open: () => void) => React.ReactNode;
+  usage?: number;
 }) {
   return (
     <Dialog
@@ -268,7 +316,7 @@ function TopicDialog({
           onSubmit={(e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
-            onSave(String(fd.get("title")), Number(fd.get("weight")), close);
+            onSave(String(fd.get("title")), Number(fd.get("weight")), close, fd.get("propagate") === "yes");
           }}
         >
           <label className="block">
@@ -282,6 +330,7 @@ function TopicDialog({
               Témata s vyšší váhou mají větší vliv na celkové skóre. Při stejné váze všech témat se počítá prostý průměr.
             </span>
           </label>
+          {initial && <SyncChoice usage={usage} what="název a váha tématu" />}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={close}>
               Zrušit
@@ -313,14 +362,129 @@ function QuestionDialog({
   initial,
   onSave,
   trigger,
+  usage = 0,
+  library = [],
+  topicTitle,
 }: {
   title: string;
   initial?: Question;
-  onSave: (q: QuestionInput, close: () => void) => void;
+  onSave: (q: QuestionInput, close: () => void, propagate: boolean) => void;
   trigger: (open: () => void) => React.ReactNode;
+  usage?: number;
+  library?: LibraryQuestion[];
+  topicTitle?: string;
 }) {
   return (
-    <Dialog wide title={title} trigger={trigger} content={(close) => <QuestionForm initial={initial} onSave={(q) => onSave(q, close)} onCancel={close} />} />
+    <Dialog
+      wide
+      title={title}
+      trigger={trigger}
+      content={(close) =>
+        initial ? (
+          <QuestionForm initial={initial} usage={usage} onSave={(q, p) => onSave(q, close, p)} onCancel={close} />
+        ) : (
+          <NewQuestion library={library} topicTitle={topicTitle ?? ""} onSave={(q) => onSave(q, close, false)} onCancel={close} />
+        )
+      }
+    />
+  );
+}
+
+/** Nová otázka: vlastní, nebo převzatá z tématu se stejným názvem v jiné šabloně. */
+function NewQuestion({
+  library,
+  topicTitle,
+  onSave,
+  onCancel,
+}: {
+  library: LibraryQuestion[];
+  topicTitle: string;
+  onSave: (q: QuestionInput) => void;
+  onCancel: () => void;
+}) {
+  const [mode, setMode] = useState<"new" | "pick">(library.length ? "pick" : "new");
+  const [picked, setPicked] = useState<LibraryQuestion | null>(null);
+  const [filter, setFilter] = useState("");
+
+  if (picked) {
+    return (
+      <div className="space-y-4">
+        <Notice>
+          Převzato ze šablony <strong>{picked.template_name}</strong>
+          {picked.company_name ? ` (${picked.company_name})` : ""}. Před uložením můžete otázku upravit.
+        </Notice>
+        <QuestionForm
+          key={picked.id}
+          initial={{ ...picked, id: "" }}
+          onSave={(q) => onSave(q)}
+          onCancel={() => setPicked(null)}
+          cancelLabel="Zpět na výběr"
+        />
+      </div>
+    );
+  }
+
+  const shown = library.filter((q) =>
+    (q.text + " " + q.template_name + " " + q.company_name).toLowerCase().includes(filter.trim().toLowerCase()),
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex rounded-lg border border-ink-200 bg-white p-0.5 text-sm">
+        <button
+          type="button"
+          onClick={() => setMode("pick")}
+          className={cx("flex-1 rounded-md px-3 py-1.5", mode === "pick" ? "bg-ink-100 font-medium" : "text-ink-500")}
+        >
+          Vybrat z existujících ({library.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("new")}
+          className={cx("flex-1 rounded-md px-3 py-1.5", mode === "new" ? "bg-ink-100 font-medium" : "text-ink-500")}
+        >
+          Napsat novou
+        </button>
+      </div>
+
+      {mode === "new" ? (
+        <QuestionForm onSave={onSave} onCancel={onCancel} />
+      ) : library.length === 0 ? (
+        <p className="py-6 text-center text-sm text-ink-500">
+          V ostatních šablonách není žádné téma „{topicTitle}“ s otázkami, které by tu ještě nebyly.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-ink-600">
+            Otázky z témat „{topicTitle}“ ve všech šablonách. Kliknutím otázku převezmete – před uložením ji můžete upravit.
+          </p>
+          <input className="input" placeholder="Hledat v otázkách…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <ul className="max-h-96 divide-y divide-ink-100 overflow-y-auto rounded-lg border border-ink-200">
+            {shown.map((q) => (
+              <li key={q.id}>
+                <button type="button" onClick={() => setPicked(q)} className="block w-full px-4 py-2.5 text-left hover:bg-ink-50">
+                  <span className="block text-sm text-ink-900">{q.text}</span>
+                  <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <Badge tone="brand">{q.template_name}</Badge>
+                    {q.company_name && <span className="text-xs text-ink-500">{q.company_name}</span>}
+                    <span className="text-xs text-ink-400">
+                      · {QUESTION_TYPE_LABEL[q.type]}
+                      {isScored(q) ? ` · váha ${Number(q.weight)}` : ""}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+            {shown.length === 0 && <li className="px-4 py-6 text-center text-sm text-ink-500">Nic nenalezeno</li>}
+          </ul>
+          <div className="flex justify-end">
+            <Button type="button" variant="secondary" onClick={onCancel}>
+              Zrušit
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -328,10 +492,14 @@ function QuestionForm({
   initial,
   onSave,
   onCancel,
+  usage = 0,
+  cancelLabel = "Zrušit",
 }: {
   initial?: Question;
-  onSave: (q: QuestionInput) => void;
+  onSave: (q: QuestionInput, propagate: boolean) => void;
   onCancel: () => void;
+  usage?: number;
+  cancelLabel?: string;
 }) {
   const [type, setType] = useState<QuestionType>(initial?.type ?? "yes_no");
   const [options, setOptions] = useState<ChoiceOption[]>(
@@ -373,7 +541,7 @@ function QuestionForm({
             mode: fd.get("mode") === "gte" ? "gte" : "lte",
             unit: String(fd.get("unit") ?? "") || undefined,
           },
-        });
+        }, fd.get("propagate") === "yes");
       }}
     >
       <label className="block">
@@ -503,9 +671,11 @@ function QuestionForm({
         )}
       </div>
 
+      {initial?.id && <SyncChoice usage={usage} what="znění, váha a nastavení otázky" />}
+
       <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">
         <Button type="button" variant="secondary" onClick={onCancel}>
-          Zrušit
+          {cancelLabel}
         </Button>
         <Button type="submit">Uložit otázku</Button>
       </div>

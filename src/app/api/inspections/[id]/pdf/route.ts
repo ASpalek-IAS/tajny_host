@@ -51,16 +51,17 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (profile.role === "admin") {
     const { data } = await db
       .from("inspections")
-      .select("title,visit_at,approved_at,score,status,company_id,branch_id,template_id,window_start,branch:branches(name,address)")
+      .select("title,visit_at,approved_at,score,status,company_id,branch_id,template_id,window_start,branch:branches(name,address),template:templates(name)")
       .eq("id", id)
       .maybeSingle();
     if (data) {
       const b = data.branch as unknown as { name: string; address: string | null };
-      base = { ...data, approved: data.status === "approved", branch_name: b.name, branch_address: b.address };
+      const tpl = data.template as unknown as { name: string } | null;
+      base = { ...data, title: tpl?.name ?? data.title, approved: data.status === "approved", branch_name: b.name, branch_address: b.address };
     }
   } else {
     const { data } = await db.from("client_inspections").select("*").eq("id", id).eq("status", "done").maybeSingle();
-    if (data) base = { ...data, approved: true };
+    if (data) base = { ...data, title: data.template_name ?? data.title, approved: true };
   }
   if (!base) return new NextResponse("Kontrola nenalezena", { status: 404 });
 

@@ -319,7 +319,7 @@ function Cover({ d, blocks }: { d: PdfData; blocks: TopicBlock[] }) {
             <Text style={s.metaValue}>{d.branchAddress || "—"}</Text>
           </View>
           <View style={s.metaCell}>
-            <Text style={s.metaLabel}>Kontrola</Text>
+            <Text style={s.metaLabel}>Dotazník</Text>
             <Text style={s.metaValue}>{d.title}</Text>
           </View>
         </View>

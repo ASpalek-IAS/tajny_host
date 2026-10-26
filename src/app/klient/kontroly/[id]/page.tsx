@@ -15,7 +15,7 @@ export default async function ClientInspectionPage({ params }: { params: Promise
     <>
       <PageHeader
         title={i.branch_name}
-        sub={`${i.title} · návštěva ${fmtDateTime(i.visit_at)}`}
+        sub={`${i.template_name ?? i.title} · návštěva ${fmtDateTime(i.visit_at)}`}
         back={{ href: "/klient/kontroly", label: "Kontroly" }}
         actions={
           <LinkButton variant="secondary" href={`/api/inspections/${id}/pdf`} prefetch={false}>

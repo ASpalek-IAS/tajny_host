@@ -4,7 +4,7 @@ import { TrendChart } from "@/components/charts";
 import { ReportFilters, TopicAverages, WeakPointsCard, type FilterValues } from "@/components/report-blocks";
 import { clientScope } from "@/lib/client-scope";
 import { loadReportRows, monthlyTrend, rowDate, summary, templateOptions, topicAverages, topicList, weakPoints } from "@/lib/reports";
-import { fmtDate, fmtScore, fmtWindow } from "@/lib/format";
+import { fmtDate, fmtScore } from "@/lib/format";
 
 export default async function ClientHome({ searchParams }: { searchParams: Promise<FilterValues> }) {
   const sp = await searchParams;
@@ -16,12 +16,6 @@ export default async function ClientHome({ searchParams }: { searchParams: Promi
   const rows = filters.template ? allRows.filter((r) => r.template_id === filters.template) : allRows;
   const sum = summary(rows);
   const weak = await weakPoints(db, rows.map((r) => r.id));
-  const { data: planned } = await db
-    .from("client_inspections")
-    .select("id,branch_name,title,window_start,window_end")
-    .eq("status", "planned")
-    .order("window_start")
-    .limit(8);
   const latest = [...rows].sort((a, b) => rowDate(b).localeCompare(rowDate(a))).slice(0, 6);
 
   return (
@@ -49,7 +43,7 @@ export default async function ClientHome({ searchParams }: { searchParams: Promi
         <WeakPointsCard weak={weak} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div>
         <Card>
           <CardHeader title="Poslední výsledky" action={<Link href="/klient/kontroly" className="text-sm text-brand-700">Vše →</Link>} />
           {latest.length === 0 ? (
@@ -65,21 +59,6 @@ export default async function ClientHome({ searchParams }: { searchParams: Promi
                     </span>
                     <ScoreBadge score={r.score} />
                   </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-        <Card>
-          <CardHeader title="Naplánované kontroly" />
-          {(planned ?? []).length === 0 ? (
-            <EmptyState title="Žádné naplánované kontroly" />
-          ) : (
-            <ul className="divide-y divide-ink-100">
-              {(planned ?? []).map((p) => (
-                <li key={p.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
-                  <span className="truncate font-medium">{p.branch_name}</span>
-                  <span className="whitespace-nowrap text-ink-500">{fmtWindow(p.window_start, p.window_end)}</span>
                 </li>
               ))}
             </ul>

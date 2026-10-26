@@ -27,6 +27,7 @@ const ACTION_LABEL: Record<string, string> = {
   cancelled: "Zrušeno",
   reopened: "Znovu otevřeno ke schválení",
   answer_edited: "Upravena odpověď",
+  template_sync: "Převzata úprava ze šablony",
 };
 
 export default async function AdminInspectionPage({
@@ -42,7 +43,7 @@ export default async function AdminInspectionPage({
   const { data: insp } = await db
     .from("inspections")
     .select(
-      "*,company:companies(id,name),branch:branches(name,address,note_for_agent)," +
+      "*,company:companies(id,name),branch:branches(name,address,note_for_agent),template:templates(name)," +
         "agent:profiles!inspections_agent_id_fkey(id,full_name,email,phone)",
     )
     .eq("id", id)
@@ -62,6 +63,7 @@ export default async function AdminInspectionPage({
     submitted_at: string | null;
     approved_at: string | null;
     company: { id: string; name: string };
+    template: { name: string } | null;
     branch: { name: string; address: string | null; note_for_agent: string | null };
     agent: { id: string; full_name: string; email: string; phone: string | null } | null;
   };
@@ -86,7 +88,7 @@ export default async function AdminInspectionPage({
         title={`${i.company.name} – ${i.branch.name}`}
         sub={
           <span className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={i.status} /> {i.title} · termín {fmtWindow(i.window_start, i.window_end)}
+            <StatusBadge status={i.status} /> {i.template?.name ?? i.title} · termín {fmtWindow(i.window_start, i.window_end)}
           </span>
         }
         back={{ href: "/admin/kontroly", label: "Kontroly" }}
@@ -173,9 +175,6 @@ export default async function AdminInspectionPage({
             <CardHeader title="Detaily" />
             <ActionForm action={updateInspection} className="space-y-3 p-5">
               <input type="hidden" name="id" value={id} />
-              <Field label="Název">
-                <input name="title" defaultValue={i.title} className="input" />
-              </Field>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Termín od">
                   <input type="date" name="window_start" defaultValue={i.window_start} className="input px-2" />

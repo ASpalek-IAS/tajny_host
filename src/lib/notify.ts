@@ -15,6 +15,7 @@ type InspectionRow = {
   agent: { email: string; full_name: string; active: boolean } | null;
   branch: { name: string; address: string | null } | null;
   company: { name: string } | null;
+  template: { name: string } | null;
 };
 
 async function loadInspections(ids: string[]) {
@@ -24,7 +25,7 @@ async function loadInspections(ids: string[]) {
     .select(
       "id,title,window_start,window_end,score,return_comment,branch_id,company_id," +
         "agent:profiles!inspections_agent_id_fkey(email,full_name,active)," +
-        "branch:branches(name,address),company:companies(name)",
+        "branch:branches(name,address),company:companies(name),template:templates(name)",
     )
     .in("id", ids);
   return (data ?? []) as unknown as InspectionRow[];
@@ -92,7 +93,7 @@ export async function notifySubmitted(id: string) {
     html: layout({
       heading: "Kontrola čeká na schválení",
       paragraphs: [
-        `${r.agent?.full_name ?? "Agent"} odeslal kontrolu „${r.title}“ pro ${r.company?.name} – ${r.branch?.name}.`,
+        `${r.agent?.full_name ?? "Agent"} odeslal kontrolu „${r.template?.name ?? r.title}“ pro ${r.company?.name} – ${r.branch?.name}.`,
       ],
       button: { label: "Zkontrolovat a schválit", url: `${SITE_URL}/admin/kontroly/${r.id}` },
     }),
@@ -108,7 +109,7 @@ export async function notifyReturned(id: string) {
     html: layout({
       heading: "Kontrola potřebuje opravu",
       paragraphs: [
-        `Správce vrátil kontrolu „${r.title}“ (${r.company?.name} – ${r.branch?.name}) s tímto komentářem:`,
+        `Správce vrátil kontrolu „${r.template?.name ?? r.title}“ (${r.company?.name} – ${r.branch?.name}) s tímto komentářem:`,
         r.return_comment ?? "",
       ],
       button: { label: "Opravit kontrolu", url: `${SITE_URL}/agent/kontroly/${r.id}` },
@@ -125,7 +126,7 @@ export async function notifyApproved(id: string) {
     subject: `Nový výsledek kontroly: ${r.branch?.name} (${fmtScore(r.score)})`,
     html: layout({
       heading: "Výsledek kontroly je k dispozici",
-      paragraphs: [`Kontrola „${r.title}“ na provozovně ${r.branch?.name} je hotová. Celkové skóre: ${fmtScore(r.score)}.`],
+      paragraphs: [`Kontrola „${r.template?.name ?? r.title}“ na provozovně ${r.branch?.name} je hotová. Celkové skóre: ${fmtScore(r.score)}.`],
       button: { label: "Zobrazit výsledek", url: `${SITE_URL}/klient/kontroly/${r.id}` },
     }),
   });

@@ -15,8 +15,7 @@ import {
 } from "recharts";
 import { cx } from "@/components/ui";
 
-// Kategoriální paleta (ověřené pořadí). Barva patří sérii, ne pořadí.
-const SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"];
+import { SERIES, VERSUS_COLORS } from "@/lib/palette";
 const GRID = "#e2e0db";
 const AXIS = "#77736b";
 const MAX_TOPICS = 3;
@@ -137,6 +136,51 @@ export function BranchBars({ data }: { data: { name: string; avg: number | null;
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function VersusTrend({ data, series }: { data: Point[]; series: { key: string; label: string }[] }) {
+  if (data.length === 0) return <p className="px-5 py-10 text-center text-sm text-ink-500">Ve zvoleném období nejsou žádné schválené kontroly.</p>;
+  return (
+    <div className="px-2 pt-3 pb-4">
+      <div className="flex flex-wrap gap-4 px-3 pb-2 text-xs text-ink-700">
+        {series.map((s, i) => (
+          <span key={s.key} className="flex items-center gap-1.5">
+            <span className="h-0.5 w-4 rounded" style={{ background: VERSUS_COLORS[i], height: 3 }} />
+            {s.label}
+          </span>
+        ))}
+      </div>
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 8, right: 24, bottom: 0, left: 0 }}>
+            <CartesianGrid stroke={GRID} vertical={false} />
+            <XAxis dataKey="month" tickFormatter={fmtMonthShort} tick={{ fill: AXIS, fontSize: 12 }} axisLine={{ stroke: GRID }} tickLine={false} />
+            <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fill: AXIS, fontSize: 12 }} axisLine={false} tickLine={false} width={52} unit=" %" />
+            <Tooltip
+              cursor={{ stroke: AXIS, strokeDasharray: "3 3" }}
+              contentStyle={{ borderRadius: 8, border: `1px solid ${GRID}`, fontSize: 12 }}
+              labelFormatter={(l) => fmtMonthShort(String(l))}
+              formatter={(v, name) => [v === null || v === undefined ? "—" : `${Number(v).toLocaleString("cs-CZ")} %`, series.find((s) => s.key === name)?.label ?? name]}
+            />
+            {series.map((s, i) => (
+              <Line
+                key={s.key}
+                type="monotone"
+                dataKey={s.key}
+                name={s.key}
+                stroke={VERSUS_COLORS[i]}
+                strokeWidth={2.5}
+                dot={{ r: 4, strokeWidth: 2, fill: "#fff" }}
+                activeDot={{ r: 5 }}
+                connectNulls
+                isAnimationActive={false}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

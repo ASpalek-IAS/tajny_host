@@ -1,9 +1,30 @@
-import { Card, CardHeader, LinkButton, PageHeader, Stat } from "@/components/ui";
+import { Card, CardHeader, LinkButton, PageHeader, Stat, Tabs } from "@/components/ui";
+import { Versus, type VersusParams } from "./versus";
 import { InspectionTable, INSPECTION_LIST_SELECT, type InspectionListRow } from "@/components/inspection-table";
 import { createClient } from "@/lib/supabase/server";
 import { addDays, fmtScore, todayISO } from "@/lib/format";
 
-export default async function AdminHome() {
+export default async function AdminHome({ searchParams }: { searchParams: Promise<VersusParams & { tab?: string }> }) {
+  const sp = await searchParams;
+  const tabs = (
+    <Tabs
+      active={sp.tab === "versus" ? "versus" : "prehled"}
+      tabs={[
+        { key: "prehled", label: "Přehled", href: "/admin" },
+        { key: "versus", label: "Versus", href: "/admin?tab=versus" },
+      ]}
+    />
+  );
+  if (sp.tab === "versus") {
+    return (
+      <>
+        <PageHeader title="Versus" sub="Porovnání firem a provozoven podle schválených kontrol" />
+        {tabs}
+        <Versus sp={sp} />
+      </>
+    );
+  }
+
   const db = await createClient();
   const today = todayISO();
   const weekEnd = addDays(today, 7);
@@ -42,6 +63,7 @@ export default async function AdminHome() {
           </>
         }
       />
+      {tabs}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Ke schválení" value={submitted.data?.length ?? 0} />
         <Stat label="Po termínu" value={overdue.data?.length ?? 0} />

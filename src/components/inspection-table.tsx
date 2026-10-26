@@ -13,10 +13,11 @@ export type InspectionListRow = {
   company: { name: string } | null;
   branch: { name: string } | null;
   agent: { full_name: string } | null;
+  template?: { name: string } | null;
 };
 
 export const INSPECTION_LIST_SELECT =
-  "id,title,status,window_start,window_end,score,company:companies(name),branch:branches(name),agent:profiles!inspections_agent_id_fkey(full_name)";
+  "id,title,status,window_start,window_end,score,company:companies(name),branch:branches(name),agent:profiles!inspections_agent_id_fkey(full_name),template:templates(name)";
 
 export function isOverdue(r: { status: InspectionStatus; window_end: string }) {
   return ["planned", "assigned", "in_progress", "returned"].includes(r.status) && r.window_end < todayISO();
@@ -69,7 +70,7 @@ export function InspectionTable({
               <Link href={`${hrefBase}/${r.id}`} className="font-medium text-ink-900 hover:text-brand-700">
                 {showCompany ? `${r.company?.name} – ${r.branch?.name}` : r.branch?.name}
               </Link>
-              <p className="text-xs text-ink-500">{r.title}</p>
+              <p className="text-xs text-ink-500">{r.template?.name ?? r.title}</p>
             </Td>
             <Td className={cx("whitespace-nowrap", isOverdue(r) && "font-medium text-bad")}>
               {fmtWindow(r.window_start, r.window_end)}

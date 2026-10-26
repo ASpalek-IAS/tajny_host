@@ -23,7 +23,7 @@ export async function createInspections(_: ActionResult, fd: FormData): Promise<
     const ws = String(fd.get("window_start") ?? "");
     const we = String(fd.get("window_end") ?? "") || ws;
     if (!templateId) return { error: "Vyberte šablonu dotazníku." };
-    if (branchIds.length === 0) return { error: "Vyberte alespoň jednu provozovnu." };
+    if (branchIds.length === 0) return { error: "Vyberte provozovnu." };
     if (!ws) return { error: "Zadejte termín." };
     if (we < ws) return { error: "Konec termínu musí být po začátku." };
     const agent = String(fd.get("agent_id") ?? "") || null;
@@ -34,7 +34,7 @@ export async function createInspections(_: ActionResult, fd: FormData): Promise<
         p_window_start: ws,
         p_window_end: we,
         p_agent: agent,
-        p_title: String(fd.get("title") ?? "").trim() || null,
+        p_title: null,
         p_instructions: String(fd.get("instructions") ?? "").trim() || null,
       });
       if (error) throw error;
@@ -64,7 +64,6 @@ export async function updateInspection(_: ActionResult, fd: FormData): Promise<A
     const { error } = await db
       .from("inspections")
       .update({
-        title: String(fd.get("title") ?? "").trim() || "Kontrola",
         window_start: ws,
         window_end: we,
         agent_id: agent,

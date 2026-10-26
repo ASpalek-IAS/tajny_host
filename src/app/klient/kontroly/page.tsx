@@ -1,21 +1,19 @@
 import Link from "next/link";
-import { Badge, Card, EmptyState, LinkButton, PageHeader, ScoreBadge, Table, Td, Th } from "@/components/ui";
+import { Card, EmptyState, LinkButton, PageHeader, ScoreBadge, Table, Td, Th } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
-import { fmtDate, fmtWindow } from "@/lib/format";
+import { fmtDate } from "@/lib/format";
 
-type SP = { provozovna?: string; stav?: string; od?: string; do?: string };
+type SP = { provozovna?: string; od?: string; do?: string };
 
 export default async function ClientInspections({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const db = await createClient();
   const { data: branches } = await db.from("branches").select("id,name").order("name");
-  let q = db.from("client_inspections").select("*");
+  let q = db.from("client_inspections").select("*").eq("status", "done");
   if (sp.provozovna) q = q.eq("branch_id", sp.provozovna);
-  if (sp.stav === "done" || sp.stav === "planned") q = q.eq("status", sp.stav);
-  if (sp.od) q = q.gte("window_end", sp.od);
-  if (sp.do) q = q.lte("window_start", sp.do);
-  const { data } = await q.order("window_start", { ascending: false }).limit(500);
-  const rows = data ?? [];
+  const { data } = await q.order("visit_at", { ascending: false, nullsFirst: false }).limit(500);
+  const day = (r: { visit_at: string | null; window_start: string }) => (r.visit_at ?? r.window_start).slice(0, 10);
+  const rows = (data ?? []).filter((r) => (!sp.od || day(r) >= sp.od) && (!sp.do || day(r) <= sp.do));
   const exportQs = new URLSearchParams(Object.entries({ provozovna: sp.provozovna, od: sp.od, do: sp.do }).filter(([, v]) => v) as [string, string][]);
 
   return (
@@ -41,14 +39,6 @@ export default async function ClientInspections({ searchParams }: { searchParams
           </select>
         </label>
         <label>
-          <span className="label">Stav</span>
-          <select name="stav" defaultValue={sp.stav ?? ""} className="input w-40">
-            <option value="">Vše</option>
-            <option value="done">Hotové</option>
-            <option value="planned">Naplánované</option>
-          </select>
-        </label>
-        <label>
           <span className="label">Od</span>
           <input type="date" name="od" defaultValue={sp.od ?? ""} className="input" />
         </label>
@@ -60,15 +50,13 @@ export default async function ClientInspections({ searchParams }: { searchParams
       </form>
       <Card>
         {rows.length === 0 ? (
-          <EmptyState title="Žádné kontroly" />
+          <EmptyState title="Zatím žádné výsledky kontrol" />
         ) : (
           <Table>
             <thead>
               <tr>
                 <Th>Provozovna</Th>
-                <Th>Termín</Th>
-                <Th>Návštěva</Th>
-                <Th>Stav</Th>
+                <Th>Datum návštěvy</Th>
                 <Th className="text-right">Skóre</Th>
               </tr>
             </thead>
@@ -76,19 +64,15 @@ export default async function ClientInspections({ searchParams }: { searchParams
               {rows.map((r) => (
                 <tr key={r.id} className="hover:bg-ink-50">
                   <Td>
-                    {r.status === "done" ? (
-                      <Link href={`/klient/kontroly/${r.id}`} className="font-medium hover:text-brand-700">
-                        {r.branch_name}
-                      </Link>
-                    ) : (
-                      <span className="font-medium">{r.branch_name}</span>
-                    )}
-                    <p className="text-xs text-ink-500">{r.title}</p>
+                    <Link href={`/klient/kontroly/${r.id}`} className="font-medium hover:text-brand-700">
+                      {r.branch_name}
+                    </Link>
+                    <p className="text-xs text-ink-500">{r.template_name ?? r.title}</p>
                   </Td>
-                  <Td className="whitespace-nowrap">{fmtWindow(r.window_start, r.window_end)}</Td>
-                  <Td className="whitespace-nowrap">{r.visit_at ? fmtDate(r.visit_at) : "—"}</Td>
-                  <Td>{r.status === "done" ? <Badge tone="good">Hotová</Badge> : <Badge>Naplánovaná</Badge>}</Td>
-                  <Td className="text-right">{r.status === "done" && <ScoreBadge score={r.score} />}</Td>
+                  <Td className="whitespace-nowrap">{fmtDate(day(r))}</Td>
+                  <Td className="text-right">
+                    <ScoreBadge score={r.score} />
+                  </Td>
                 </tr>
               ))}
             </tbody>
