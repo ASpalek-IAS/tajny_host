@@ -30,6 +30,30 @@ export function rowDate(r: ReportRow) {
   return (r.visit_at ?? r.window_start).slice(0, 10);
 }
 
+/**
+ * Omezí dotaz na období už v databázi (rychlost, limit 1000 řádků).
+ * Datum kontroly = návštěva, jinak začátek termínu. Hranice jsou o den volnější
+ * kvůli časovým pásmům – přesně se filtruje v loadReportRows.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function periodFilter<Q extends { or: (f: string) => any }>(q: Q, f: ReportFilters): Q {
+  const shift = (d: string, n: number) => {
+    const x = new Date(d + "T12:00:00Z");
+    x.setUTCDate(x.getUTCDate() + n);
+    return x.toISOString().slice(0, 10);
+  };
+  let r = q;
+  if (f.from) {
+    const d = shift(f.from, -1);
+    r = r.or(`visit_at.gte.${d},and(visit_at.is.null,window_start.gte.${d})`);
+  }
+  if (f.to) {
+    const d = shift(f.to, 2);
+    r = r.or(`visit_at.lt.${d},and(visit_at.is.null,window_start.lt.${d})`);
+  }
+  return r;
+}
+
 export async function loadReportRows(
   db: SupabaseClient,
   asClient: boolean,
@@ -42,7 +66,7 @@ export async function loadReportRows(
       .select("id,company_id,branch_id,branch_name,template_id,title,window_start,visit_at,approved_at,score,topic_scores")
       .eq("status", "done");
     if (f.branch) q = q.eq("branch_id", f.branch);
-    const { data } = await q.order("window_start");
+    const { data } = await periodFilter(q, f).order("window_start");
     rows = (data ?? []) as ReportRow[];
   } else {
     let q = db
@@ -53,7 +77,8 @@ export async function loadReportRows(
       .eq("status", "approved");
     if (f.company) q = q.eq("company_id", f.company);
     if (f.branch) q = q.eq("branch_id", f.branch);
-    const { data } = await q.order("window_start");
+    if (f.template) q = q.eq("template_id", f.template);
+    const { data } = await periodFilter(q, f).order("window_start");
     rows = (data ?? []).map((r) => {
       const x = r as unknown as ReportRow & { branch: { name: string }; company: { name: string } };
       return { ...x, branch_name: x.branch?.name, company_name: x.company?.name };
@@ -146,33 +171,18 @@ export function branchRanking(rows: ReportRow[]) {
 
 export type WeakPoint = { text: string; topic: string; total: number; negative: number; share: number };
 
-/** Otázky s nejčastější zápornou (nulovou) odpovědí. */
+/** Otázky s nejčastější zápornou (nulovou) odpovědí – spočítá databáze (funkce weak_points). */
 export async function weakPoints(db: SupabaseClient, inspectionIds: string[], limit = 10): Promise<WeakPoint[]> {
   if (inspectionIds.length === 0) return [];
-  const all: { fraction: number | null; question: { text: string; topic: { title: string } | null } | null }[] = [];
-  // po dávkách kvůli délce URL
-  for (let i = 0; i < inspectionIds.length; i += 150) {
-    const { data } = await db
-      .from("answers")
-      .select("fraction,question:inspection_questions(text,topic:inspection_topics(title))")
-      .in("inspection_id", inspectionIds.slice(i, i + 150))
-      .not("fraction", "is", null);
-    all.push(...((data ?? []) as unknown as typeof all));
+  const { data, error } = await db.rpc("weak_points", { p_ids: inspectionIds, p_limit: limit });
+  if (error) {
+    console.error("Slabá místa se nepodařilo spočítat:", error.message);
+    return [];
   }
-  const by = new Map<string, WeakPoint>();
-  for (const a of all) {
-    if (!a.question) continue;
-    const key = `${a.question.topic?.title}|${a.question.text}`;
-    const w = by.get(key) ?? { text: a.question.text, topic: a.question.topic?.title ?? "", total: 0, negative: 0, share: 0 };
-    w.total++;
-    if (Number(a.fraction) === 0) w.negative++;
-    by.set(key, w);
-  }
-  return [...by.values()]
-    .map((w) => ({ ...w, share: Math.round((w.negative / w.total) * 100) }))
-    .filter((w) => w.negative > 0)
-    .sort((a, b) => b.share - a.share || b.negative - a.negative)
-    .slice(0, limit);
+  return ((data ?? []) as { text: string; topic: string; total: number; negative: number }[]).map((w) => ({
+    ...w,
+    share: Math.round((w.negative / w.total) * 100),
+  }));
 }
 
 /** Nejčastěji použitý dotazník v datech (výchozí pro grafy vývoje). */
