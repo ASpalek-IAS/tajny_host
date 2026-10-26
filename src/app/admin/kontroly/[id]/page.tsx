@@ -52,14 +52,30 @@ export default async function AdminInspectionPage({
   const me = await requireStaff();
   const isAdmin = me.role === "admin";
   const db = await createClient();
-  const { data: insp } = await db
-    .from("inspections")
-    .select(
-      "*,company:companies(id,name),branch:branches(name,address,note_for_agent),template:templates(name)," +
-        "agent:profiles!inspections_agent_id_fkey(id,full_name,email,phone)",
-    )
-    .eq("id", id)
-    .maybeSingle();
+  // kontrola, obsah, agenti i historie najednou – každý dotaz je zpáteční cesta do databáze
+  const [{ data: insp }, content, { data: agents }, { data: log }] =
+    await Promise.all([
+      db
+        .from("inspections")
+        .select(
+          "*,company:companies(id,name),branch:branches(name,address,note_for_agent),template:templates(name)," +
+            "agent:profiles!inspections_agent_id_fkey(id,full_name,email,phone)",
+        )
+        .eq("id", id)
+        .maybeSingle(),
+      loadInspectionContent(db, id),
+      db
+        .from("profiles")
+        .select("id,full_name")
+        .eq("role", "agent")
+        .eq("active", true)
+        .order("full_name"),
+      db
+        .from("audit_log")
+        .select("id,action,details,created_at,actor:profiles(full_name)")
+        .eq("inspection_id", id)
+        .order("created_at", { ascending: false }),
+    ]);
   if (!insp) notFound();
   const i = insp as unknown as {
     id: string;
@@ -89,21 +105,6 @@ export default async function AdminInspectionPage({
       phone: string | null;
     } | null;
   };
-
-  const [content, { data: agents }, { data: log }] = await Promise.all([
-    loadInspectionContent(db, id),
-    db
-      .from("profiles")
-      .select("id,full_name")
-      .eq("role", "agent")
-      .eq("active", true)
-      .order("full_name"),
-    db
-      .from("audit_log")
-      .select("id,action,details,created_at,actor:profiles(full_name)")
-      .eq("inspection_id", id)
-      .order("created_at", { ascending: false }),
-  ]);
 
   const beforeStart = i.status === "planned" || i.status === "assigned";
   const hasAnswers = Object.keys(content.answers).length > 0;
@@ -151,8 +152,40 @@ export default async function AdminInspectionPage({
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="min-w-0 space-y-4">
+      {/* schválení je na telefonu nahoře (jinak by bylo až pod celým dotazníkem), na počítači vpravo */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[auto_1fr] lg:gap-6">
+          {i.status === "submitted" && (
+            <Card className="lg:col-start-2 lg:row-start-1 lg:self-start">
+              <CardHeader title="Schválení" />
+              <div className="space-y-4 p-5">
+                <ActionForm action={approveInspection}>
+                  <input type="hidden" name="id" value={id} />
+                  <SubmitButton className="w-full" pendingText="Schvaluji…">
+                    Schválit a zveřejnit klientovi
+                  </SubmitButton>
+                </ActionForm>
+                <ActionForm
+                  action={returnInspection}
+                  className="space-y-2 border-t border-ink-100 pt-4"
+                >
+                  <input type="hidden" name="id" value={id} />
+                  <Field label="Vrátit agentovi k opravě">
+                    <textarea
+                      name="comment"
+                      rows={3}
+                      required
+                      className="input"
+                      placeholder="Co má agent opravit nebo doplnit"
+                    />
+                  </Field>
+                  <SubmitButton variant="secondary" className="w-full">
+                    Vrátit k opravě
+                  </SubmitButton>
+                </ActionForm>
+              </div>
+            </Card>
+          )}
+        <div className="min-w-0 space-y-4 lg:col-start-1 lg:row-span-2 lg:row-start-1">
           {i.status === "returned" && i.return_comment && (
             <Notice tone="warn">
               <strong>Vráceno agentovi:</strong> {i.return_comment}
@@ -216,38 +249,7 @@ export default async function AdminInspectionPage({
           )}
         </div>
 
-        <aside className="space-y-4">
-          {i.status === "submitted" && (
-            <Card>
-              <CardHeader title="Schválení" />
-              <div className="space-y-4 p-5">
-                <ActionForm action={approveInspection}>
-                  <input type="hidden" name="id" value={id} />
-                  <SubmitButton className="w-full" pendingText="Schvaluji…">
-                    Schválit a zveřejnit klientovi
-                  </SubmitButton>
-                </ActionForm>
-                <ActionForm
-                  action={returnInspection}
-                  className="space-y-2 border-t border-ink-100 pt-4"
-                >
-                  <input type="hidden" name="id" value={id} />
-                  <Field label="Vrátit agentovi k opravě">
-                    <textarea
-                      name="comment"
-                      rows={3}
-                      required
-                      className="input"
-                      placeholder="Co má agent opravit nebo doplnit"
-                    />
-                  </Field>
-                  <SubmitButton variant="secondary" className="w-full">
-                    Vrátit k opravě
-                  </SubmitButton>
-                </ActionForm>
-              </div>
-            </Card>
-          )}
+        <aside className="space-y-4 lg:col-start-2 lg:self-start">
 
           <Card>
             <CardHeader title="Detaily" />

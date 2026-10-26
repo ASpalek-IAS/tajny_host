@@ -111,7 +111,7 @@ export async function Versus({ sp }: { sp: VersusParams }) {
             </label>
           ))}
         </div>
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="filters">
           <label>
             <span className="label">Od</span>
             <input type="date" name="od" defaultValue={from} className="input" />

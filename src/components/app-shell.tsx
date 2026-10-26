@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Logo } from "@/components/auth-card";
 import { NavLinks, type NavItem } from "@/components/nav-links";
+import { MobileNav } from "@/components/mobile-nav";
 import { LogoutButton } from "@/components/logout-button";
 import { ROLE_LABEL, type Profile } from "@/lib/types";
 
@@ -33,23 +34,9 @@ export function AppShell({
         <UserBox profile={profile} />
       </aside>
 
-      <header className="sticky top-0 z-10 border-b border-ink-200 bg-white lg:hidden">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Logo className="h-6 w-6" />
-            <span className="text-sm font-semibold">{app}</span>
-          </div>
-          <div className="flex items-center gap-3 text-sm">
-            <Link href="/ucet" className="text-ink-600">
-              Účet
-            </Link>
-            <LogoutButton className="text-ink-600" label="Odhlásit" />
-          </div>
-        </div>
-        <NavLinks items={nav} mobile />
-      </header>
+      <MobileNav app={app} items={nav} user={{ name: profile.full_name || profile.email, email: profile.email }} />
 
-      <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+      <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6 lg:px-10 lg:py-8">
         <div className="mx-auto max-w-6xl">{children}</div>
       </main>
     </div>

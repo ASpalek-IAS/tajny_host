@@ -26,7 +26,7 @@ export default async function ClientInspections({ searchParams }: { searchParams
           </LinkButton>
         }
       />
-      <form className="mb-4 flex flex-wrap items-end gap-3">
+      <form className="filters mb-4">
         <label>
           <span className="label">Provozovna</span>
           <select name="provozovna" defaultValue={sp.provozovna ?? ""} className="input w-52">
@@ -52,7 +52,7 @@ export default async function ClientInspections({ searchParams }: { searchParams
         {rows.length === 0 ? (
           <EmptyState title="Zatím žádné výsledky kontrol" />
         ) : (
-          <Table>
+          <Table fit>
             <thead>
               <tr>
                 <Th>Provozovna</Th>

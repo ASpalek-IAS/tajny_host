@@ -111,7 +111,7 @@ export function Dialog({
         ref={ref}
         onClose={() => setOpen(false)}
         className={cx(
-          "m-auto w-[calc(100%-2rem)] rounded-xl border border-ink-200 bg-white p-0 shadow-xl backdrop:bg-ink-900/40",
+          "m-auto max-h-[88dvh] w-[calc(100%-1.5rem)] rounded-xl border border-ink-200 bg-white p-0 shadow-xl backdrop:bg-ink-900/40",
           wide ? "max-w-3xl" : "max-w-lg",
         )}
       >
@@ -123,7 +123,7 @@ export function Dialog({
                 ✕
               </button>
             </div>
-            <div className="max-h-[75vh] overflow-y-auto px-5 py-4">{content(() => setOpen(false))}</div>
+            <div className="max-h-[calc(88dvh-4rem)] overflow-y-auto px-4 py-4 sm:px-5">{content(() => setOpen(false))}</div>
           </div>
         )}
       </dialog>

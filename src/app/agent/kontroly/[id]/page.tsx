@@ -11,16 +11,25 @@ import type { InspectionStatus } from "@/lib/types";
 /** Čas vykreslení – formulář podle něj pozná stránku otevřenou offline z mezipaměti. */
 const renderedAt = () => Date.now();
 
-export default async function AgentInspectionPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AgentInspectionPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   const profile = await requireRole("agent");
   const db = await createClient();
-  const { data } = await db
-    .from("inspections")
-    .select("id,title,status,window_start,window_end,instructions,visit_at,expense,return_comment,agent_id,company:companies(name),branch:branches(name,address,note_for_agent)")
-    .eq("id", id)
-    .eq("agent_id", profile.id)
-    .maybeSingle();
+  const [{ data }, content] = await Promise.all([
+    db
+      .from("inspections")
+      .select(
+        "id,title,status,window_start,window_end,instructions,visit_at,expense,return_comment,agent_id,company:companies(name),branch:branches(name,address,note_for_agent)",
+      )
+      .eq("id", id)
+      .eq("agent_id", profile.id)
+      .maybeSingle(),
+    loadInspectionContent(db, id),
+  ]);
   if (!data) notFound();
   const i = data as unknown as {
     id: string;
@@ -33,9 +42,12 @@ export default async function AgentInspectionPage({ params }: { params: Promise<
     expense: number | null;
     return_comment: string | null;
     company: { name: string };
-    branch: { name: string; address: string | null; note_for_agent: string | null };
+    branch: {
+      name: string;
+      address: string | null;
+      note_for_agent: string | null;
+    };
   };
-  const content = await loadInspectionContent(db, id);
   const editable = ["assigned", "in_progress", "returned"].includes(i.status);
   const overdue = editable && i.window_end < todayISO();
 
@@ -58,10 +70,13 @@ export default async function AgentInspectionPage({ params }: { params: Promise<
       <div className="mb-4 space-y-3">
         {i.status === "returned" && i.return_comment && (
           <Notice tone="error">
-            <strong>Správce vrátil kontrolu k opravě:</strong> {i.return_comment}
+            <strong>Správce vrátil kontrolu k opravě:</strong>{" "}
+            {i.return_comment}
           </Notice>
         )}
-        {i.status === "submitted" && <Notice>Kontrola je odeslaná a čeká na schválení správcem.</Notice>}
+        {i.status === "submitted" && (
+          <Notice>Kontrola je odeslaná a čeká na schválení správcem.</Notice>
+        )}
         {(i.branch.address || i.instructions || i.branch.note_for_agent) && (
           <Card className="grid gap-4 p-5 text-sm sm:grid-cols-2">
             {i.branch.address && (
@@ -81,7 +96,9 @@ export default async function AgentInspectionPage({ params }: { params: Promise<
             )}
             {i.branch.note_for_agent && (
               <div>
-                <p className="text-xs font-medium text-ink-500">Poznámka k provozovně</p>
+                <p className="text-xs font-medium text-ink-500">
+                  Poznámka k provozovně
+                </p>
                 <p className="whitespace-pre-wrap">{i.branch.note_for_agent}</p>
               </div>
             )}

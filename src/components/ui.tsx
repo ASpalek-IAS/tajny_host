@@ -47,12 +47,12 @@ export function Card({ className, children }: { className?: string; children: Re
 
 export function CardHeader({ title, action, sub }: { title: ReactNode; action?: ReactNode; sub?: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-ink-100 px-5 py-3.5">
-      <div>
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 border-b border-ink-100 px-4 py-3.5 sm:px-5">
+      <div className="min-w-0 flex-1 basis-48">
         <h2 className="text-sm font-semibold text-ink-900">{title}</h2>
         {sub && <p className="mt-0.5 text-xs text-ink-500">{sub}</p>}
       </div>
-      {action}
+      {action && <div className="flex shrink-0 flex-wrap gap-2">{action}</div>}
     </div>
   );
 }
@@ -77,10 +77,10 @@ export function PageHeader({
       )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-ink-900">{title}</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-balance text-ink-900 sm:text-2xl">{title}</h1>
           {sub && <div className="mt-1 text-sm text-ink-500">{sub}</div>}
         </div>
-        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+        {actions && <div className="flex w-full flex-wrap gap-2 sm:w-auto">{actions}</div>}
       </div>
     </div>
   );
@@ -166,22 +166,33 @@ export function Field({
   );
 }
 
-export function Table({ children }: { children: ReactNode }) {
+/**
+ * Tabulka. Na telefonu má minimální šířku a posouvá se do strany, aby se sloupce
+ * nemačkaly (text po jednom slově na řádek). Malé tabulky (2–3 sloupce) mají `fit`.
+ */
+export function Table({ children, fit }: { children: ReactNode; fit?: boolean }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">{children}</table>
+    <div className="table-scroll overflow-x-auto overscroll-x-contain">
+      <table className={cx("w-full text-left text-sm", !fit && "min-w-[40rem] lg:min-w-0")}>{children}</table>
     </div>
   );
 }
 export function Th({ children, className }: { children?: ReactNode; className?: string }) {
   return (
-    <th className={cx("border-b border-ink-100 px-4 py-2.5 text-xs font-medium tracking-wide text-ink-500 uppercase", className)}>
+    <th
+      className={cx(
+        "border-b border-ink-100 px-3 py-2.5 text-xs font-medium tracking-wide whitespace-nowrap text-ink-500 uppercase first:pl-4 last:pr-4 sm:px-4",
+        className,
+      )}
+    >
       {children}
     </th>
   );
 }
 export function Td({ children, className }: { children?: ReactNode; className?: string }) {
-  return <td className={cx("border-b border-ink-100 px-4 py-3 align-middle", className)}>{children}</td>;
+  return (
+    <td className={cx("border-b border-ink-100 px-3 py-3 align-middle first:pl-4 last:pr-4 sm:px-4", className)}>{children}</td>
+  );
 }
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
@@ -195,7 +206,7 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
 
 export function Tabs({ tabs, active }: { tabs: { key: string; label: ReactNode; href: string }[]; active: string }) {
   return (
-    <div className="mb-6 flex gap-1 overflow-x-auto border-b border-ink-200">
+    <div className="no-scrollbar -mx-4 mb-6 flex gap-1 overflow-x-auto border-b border-ink-200 px-4 sm:mx-0 sm:px-0">
       {tabs.map((t) => (
         <Link
           key={t.key}
@@ -229,5 +240,30 @@ export function Stat({ label, value, sub }: { label: string; value: ReactNode; s
       <p className="tabular mt-1 text-2xl font-semibold tracking-tight text-ink-900">{value}</p>
       {sub && <p className="mt-0.5 text-xs text-ink-500">{sub}</p>}
     </Card>
+  );
+}
+
+/** Kostra stránky během načítání – zobrazí se okamžitě po kliknutí. */
+export function PageSkeleton({ rows = 5 }: { rows?: number }) {
+  return (
+    <div className="animate-pulse" aria-busy="true" aria-label="Načítám…">
+      <div className="mb-6 space-y-2">
+        <div className="h-7 w-48 rounded-md bg-ink-200/70" />
+        <div className="h-4 w-64 max-w-full rounded bg-ink-100" />
+      </div>
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-20 rounded-xl border border-ink-200 bg-white" />
+        ))}
+      </div>
+      <div className="overflow-hidden rounded-xl border border-ink-200 bg-white">
+        {Array.from({ length: rows }).map((_, i) => (
+          <div key={i} className="flex items-center gap-4 border-b border-ink-100 px-5 py-4 last:border-0">
+            <div className="h-4 flex-1 rounded bg-ink-100" />
+            <div className="h-4 w-20 rounded bg-ink-100" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

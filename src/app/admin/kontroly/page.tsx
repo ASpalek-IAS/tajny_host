@@ -51,7 +51,7 @@ export default async function InspectionsPage({ searchParams }: { searchParams: 
     <>
       <PageHeader title="Kontroly" actions={<LinkButton href="/admin/kontroly/nova">Naplánovat kontrolu</LinkButton>} />
 
-      <form className="mb-4 flex flex-wrap items-end gap-3" action="/admin/kontroly">
+      <form className="filters mb-4" action="/admin/kontroly">
         <input type="hidden" name="pohled" value={view} />
         {view === "kalendar" && <input type="hidden" name="mesic" value={month} />}
         <label>
@@ -103,7 +103,7 @@ export default async function InspectionsPage({ searchParams }: { searchParams: 
           </>
         )}
         <button className="rounded-lg bg-ink-800 px-3.5 py-2 text-sm font-medium text-white">Filtrovat</button>
-        <div className="ml-auto flex rounded-lg border border-ink-200 bg-white p-0.5 text-sm">
+        <div className="flex rounded-lg border border-ink-200 bg-white p-0.5 text-sm sm:ml-auto [&>a]:flex-1 [&>a]:text-center">
           {(["seznam", "kalendar"] as const).map((v) => (
             <Link
               key={v}

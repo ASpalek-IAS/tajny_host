@@ -102,13 +102,13 @@ export function QuestionnaireEditor({
         const share = totalWeight > 0 ? Math.round((Number(t.weight) / totalWeight) * 100) : 0;
         return (
           <Card key={t.id}>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-ink-100 px-4 py-3 sm:px-5">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="tabular flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand-50 text-xs font-semibold text-brand-700">
                   {ti + 1}
                 </span>
                 <div className="min-w-0">
-                  <h3 className="truncate font-semibold">{t.title}</h3>
+                  <h3 className="font-semibold text-balance">{t.title}</h3>
                   <p className="text-xs text-ink-500">
                     {qs.length} {plural(qs.length, "otázka", "otázky", "otázek")} · váha {Number(t.weight)}
                     {totalWeight > 0 && ` (${share} % celkového skóre)`}
@@ -116,7 +116,7 @@ export function QuestionnaireEditor({
                 </div>
               </div>
               {!readOnly && (
-                <div className="flex items-center gap-1">
+                <div className="-ml-2 flex items-center gap-1 sm:ml-0">
                   <IconBtn label="Posunout nahoru" disabled={ti === 0} onClick={() => exec(() => moveTopic(scope, parentId, t.id, -1))}>
                     ↑
                   </IconBtn>
@@ -157,10 +157,12 @@ export function QuestionnaireEditor({
 
             <ol className="divide-y divide-ink-100">
               {qs.map((q, qi) => (
-                <li key={q.id} className="flex items-start gap-3 px-5 py-3">
+                <li key={q.id} className="flex items-start gap-3 px-4 py-3 sm:px-5">
                   <span className="tabular w-8 shrink-0 pt-0.5 text-xs text-ink-400">
                     {ti + 1}.{qi + 1}
                   </span>
+                  {/* na telefonu tlačítka pod textem, jinak by text zbyl jen úzký sloupec */}
+                  <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-start sm:gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-ink-900">{q.text}</p>
                     <div className="mt-1 flex flex-wrap gap-1.5">
@@ -172,7 +174,7 @@ export function QuestionnaireEditor({
                     {q.help_text && <p className="mt-1 text-xs text-ink-500">Nápověda: {q.help_text}</p>}
                   </div>
                   {!readOnly && (
-                    <div className="flex shrink-0 items-center gap-1">
+                    <div className="-ml-2 flex shrink-0 items-center gap-1 sm:ml-0">
                       <IconBtn label="Nahoru" disabled={qi === 0} onClick={() => exec(() => moveQuestion(scope, parentId, t.id, q.id, -1))}>
                         ↑
                       </IconBtn>
@@ -208,11 +210,12 @@ export function QuestionnaireEditor({
                       </Button>
                     </div>
                   )}
+                  </div>
                 </li>
               ))}
             </ol>
             {!readOnly && (
-              <div className="border-t border-ink-100 px-5 py-3">
+              <div className="border-t border-ink-100 px-4 py-3 sm:px-5">
                 <QuestionDialog
                   title={`Nová otázka – ${t.title}`}
                   library={(library[t.title.trim().toLowerCase()] ?? []).filter(
@@ -269,7 +272,7 @@ function IconBtn({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="flex h-7 w-7 items-center justify-center rounded-md text-ink-500 hover:bg-ink-100 disabled:opacity-30"
+      className="flex h-9 w-9 items-center justify-center rounded-md text-ink-500 hover:bg-ink-100 disabled:opacity-30 sm:h-7 sm:w-7"
     >
       {children}
     </button>

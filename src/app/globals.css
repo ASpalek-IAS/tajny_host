@@ -59,3 +59,71 @@ body {
     @apply mt-1 text-xs text-ink-500;
   }
 }
+
+/* ---------- Telefon ---------- */
+
+/* iPhone při psaní do pole menšího než 16 px přiblíží stránku a rozhodí rozložení */
+@media (max-width: 639px) {
+  .input {
+    font-size: 16px;
+  }
+}
+
+/*
+ * Filtry nad seznamy: na telefonu mřížka o dvou sloupcích – výběry a hledání
+ * přes celou šířku, data vedle sebe, tlačítko přes celou šířku. Od tabletu výš
+ * řádek vedle sebe jako dosud.
+ */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+@media (max-width: 639px) {
+  .filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .filters > * {
+    min-width: 0;
+    grid-column: 1 / -1;
+  }
+  .filters > label:has(input[type="date"]) {
+    grid-column: auto;
+  }
+  .filters .input {
+    width: 100% !important;
+    min-width: 0;
+  }
+  .filters > button,
+  .filters > a {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Tabulka posouvatelná do strany: stín u okraje naznačí, že pokračuje */
+.table-scroll {
+  background:
+    linear-gradient(to right, white 30%, rgb(255 255 255 / 0)) left / 24px 100% no-repeat local,
+    linear-gradient(to left, white 30%, rgb(255 255 255 / 0)) right / 24px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.12), transparent) left / 10px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.12), transparent) right / 10px 100% no-repeat scroll;
+}
+
+/* vodorovné posuvníky záložek a menu na telefonu skrýt */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* bezpečná zóna (výřez/indikátor) na iPhonu v nainstalované aplikaci */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}

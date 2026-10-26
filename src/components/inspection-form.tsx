@@ -536,7 +536,7 @@ export function InspectionForm({
         })}
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-ink-200 bg-white/95 backdrop-blur lg:left-60">
+      <div className="pb-safe fixed inset-x-0 bottom-0 z-20 border-t border-ink-200 bg-white/95 backdrop-blur lg:left-60">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-10">
           <div className="min-w-0 text-sm">
             <p className="font-medium">

@@ -86,7 +86,7 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
 
       <form action="/admin/ucetnictvi" className="mb-6 space-y-3">
         <input type="hidden" name="f" value="1" />
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="filters">
           <label>
             <span className="label">Od</span>
             <input type="date" name="od" defaultValue={from} className="input" />
@@ -95,7 +95,7 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
             <span className="label">Do</span>
             <input type="date" name="do" defaultValue={to} className="input" />
           </label>
-          <label className="min-w-56 flex-1 sm:max-w-xs">
+          <label className="sm:max-w-xs sm:min-w-56 sm:flex-1">
             <span className="label">Hledat agenta</span>
             <input type="search" name="q" defaultValue={q} placeholder="Jméno nebo e-mail" className="input" />
           </label>
@@ -140,7 +140,7 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
             {hideEmpty && "Zkuste vypnout filtr „Skrýt agenty bez kontroly v období“ nebo změnit období."}
           </EmptyState>
         ) : (
-          <Table>
+          <Table fit>
             <thead>
               <tr>
                 <Th>Agent</Th>

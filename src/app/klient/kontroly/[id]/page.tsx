@@ -8,9 +8,11 @@ import { fmtDateTime } from "@/lib/format";
 export default async function ClientInspectionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = await createClient();
-  const { data: i } = await db.from("client_inspections").select("*").eq("id", id).eq("status", "done").maybeSingle();
+  const [{ data: i }, content] = await Promise.all([
+    db.from("client_inspections").select("*").eq("id", id).eq("status", "done").maybeSingle(),
+    loadInspectionContent(db, id),
+  ]);
   if (!i) notFound();
-  const content = await loadInspectionContent(db, id);
   return (
     <>
       <PageHeader

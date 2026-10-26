@@ -36,7 +36,7 @@ export function ReportFilters({
   extra?: React.ReactNode;
 }) {
   return (
-    <form action={action} className="mb-6 flex flex-wrap items-end gap-3">
+    <form action={action} className="filters mb-6">
       {companies && (
         <label>
           <span className="label">Firma</span>
@@ -156,7 +156,7 @@ export function WeakPointsCard({ weak }: { weak: WeakPoint[] }) {
       {weak.length === 0 ? (
         <EmptyState title="Žádné záporné odpovědi" />
       ) : (
-        <Table>
+        <Table fit>
           <thead>
             <tr>
               <Th>Otázka</Th>

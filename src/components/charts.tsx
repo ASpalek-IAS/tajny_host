@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -116,9 +116,40 @@ export function TrendChart({ data, topics }: { data: Point[]; topics: string[] }
   );
 }
 
+/** Úzká obrazovka (telefon) – grafy s dlouhými popisky se kreslí jinak. */
+function useNarrow() {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia("(max-width: 639px)");
+    const on = () => setNarrow(m.matches);
+    on();
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return narrow;
+}
+
 export function BranchBars({ data }: { data: { name: string; avg: number | null; count: number }[] }) {
+  const narrow = useNarrow();
   const rows = data.filter((d) => d.avg !== null);
   if (rows.length === 0) return <p className="px-5 py-10 text-center text-sm text-ink-500">Žádná data.</p>;
+  if (narrow)
+    // na telefonu popisek nad pruhem – dlouhé názvy provozoven se jinak nevejdou
+    return (
+      <ul className="space-y-3 px-4 py-4">
+        {rows.map((r) => (
+          <li key={r.name}>
+            <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate text-ink-800">{r.name}</span>
+              <span className="tabular shrink-0 font-medium">{Number(r.avg).toLocaleString("cs-CZ")} %</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-ink-100">
+              <div className="h-full rounded-full" style={{ width: `${r.avg}%`, background: SERIES[0] }} />
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
   return (
     <div className="px-3 py-4" style={{ height: Math.max(120, rows.length * 34 + 40) }}>
       <ResponsiveContainer width="100%" height="100%">

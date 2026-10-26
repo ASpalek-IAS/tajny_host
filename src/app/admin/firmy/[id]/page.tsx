@@ -37,9 +37,11 @@ export default async function CompanyPage({
   const { tab: tabKey = "provozovny" } = await searchParams;
   const tab = tabs.some((t) => t.key === tabKey) ? tabKey : "provozovny";
   const db = await createClient();
-  const { data: company } = await db.from("companies").select("*").eq("id", id).maybeSingle();
+  const [{ data: company }, { data: branchesData }] = await Promise.all([
+    db.from("companies").select("*").eq("id", id).maybeSingle(),
+    db.from("branches").select("*").eq("company_id", id).order("name"),
+  ]);
   if (!company) notFound();
-  const { data: branchesData } = await db.from("branches").select("*").eq("company_id", id).order("name");
   const branches = (branchesData ?? []) as Branch[];
 
   return (
