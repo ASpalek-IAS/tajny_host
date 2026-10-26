@@ -41,9 +41,9 @@ function ensureFonts() {
 // Barvy
 // ---------------------------------------------------------------------------
 const C = {
-  navy: "#1d2b45",
-  navy2: "#2c3d5e",
-  navySoft: "#e9edf4",
+  navy: "#152b64",
+  navy2: "#21407f",
+  navySoft: "#e8eef8",
   ink: "#1b1a18",
   ink2: "#44413c",
   muted: "#77736b",

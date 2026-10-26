@@ -16,8 +16,8 @@ import {
 import { cx } from "@/components/ui";
 
 import { SERIES, VERSUS_COLORS } from "@/lib/palette";
-const GRID = "#e2e0db";
-const AXIS = "#77736b";
+const GRID = "#dfe4ec";
+const AXIS = "#677185";
 const MAX_TOPICS = 3;
 
 function fmtMonthShort(ym: string) {
@@ -156,14 +156,14 @@ export function BranchBars({ data }: { data: { name: string; avg: number | null;
         <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 56, bottom: 0, left: 8 }} barCategoryGap={8}>
           <CartesianGrid stroke={GRID} horizontal={false} />
           <XAxis type="number" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fill: AXIS, fontSize: 12 }} axisLine={false} tickLine={false} unit=" %" />
-          <YAxis type="category" dataKey="name" width={160} tick={{ fill: "#2b2926", fontSize: 12 }} axisLine={false} tickLine={false} />
+          <YAxis type="category" dataKey="name" width={160} tick={{ fill: "#232a38", fontSize: 12 }} axisLine={false} tickLine={false} />
           <Tooltip
-            cursor={{ fill: "#efeeeb" }}
+            cursor={{ fill: "#edf0f5" }}
             contentStyle={{ borderRadius: 8, border: `1px solid ${GRID}`, fontSize: 12 }}
             formatter={(v, _n, item) => [`${Number(v).toLocaleString("cs-CZ")} % (${(item.payload as { count: number }).count} kontrol)`, "Průměr"]}
           />
           <Bar dataKey="avg" fill={SERIES[0]} radius={[0, 4, 4, 0]} isAnimationActive={false}>
-            <LabelList dataKey="avg" position="right" formatter={(v) => `${Number(v).toLocaleString("cs-CZ")} %`} style={{ fill: "#44413c", fontSize: 12 }} />
+            <LabelList dataKey="avg" position="right" formatter={(v) => `${Number(v).toLocaleString("cs-CZ")} %`} style={{ fill: "#3a4253", fontSize: 12 }} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>

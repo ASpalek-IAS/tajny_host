@@ -24,18 +24,18 @@ export function layout({
   footer?: string;
 }) {
   const ps = paragraphs
-    .map((p) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#2b2926">${esc(p)}</p>`)
+    .map((p) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#232a38">${esc(p)}</p>`)
     .join("");
   const btn = button
-    ? `<p style="margin:22px 0"><a href="${button.url}" style="display:inline-block;background:#136f61;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:11px 20px;border-radius:8px">${esc(button.label)}</a></p>`
+    ? `<p style="margin:22px 0"><a href="${button.url}" style="display:inline-block;background:#1f3f86;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:11px 20px;border-radius:8px">${esc(button.label)}</a></p>`
     : "";
-  return `<!doctype html><html><body style="margin:0;background:#f7f7f5;font-family:Arial,Helvetica,sans-serif">
+  return `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="padding:28px 12px"><tr><td align="center">
-<table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border:1px solid #e2e0db;border-radius:12px">
-<tr><td style="padding:26px 28px 6px;font-size:13px;font-weight:600;color:#136f61;letter-spacing:.02em">${esc(APP_NAME)}</td></tr>
+<table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border:1px solid #dfe4ec;border-radius:12px">
+<tr><td style="padding:26px 28px 6px;font-size:13px;font-weight:600;color:#1f3f86;letter-spacing:.02em">${esc(APP_NAME)}</td></tr>
 <tr><td style="padding:6px 28px 24px">
-<h1 style="margin:0 0 16px;font-size:20px;color:#1b1a18">${esc(heading)}</h1>${ps}${btn}
-<p style="margin:18px 0 0;font-size:12px;color:#77736b">${esc(footer ?? "Tento e-mail byl odeslán automaticky.")}</p>
+<h1 style="margin:0 0 16px;font-size:20px;color:#141a26">${esc(heading)}</h1>${ps}${btn}
+<p style="margin:18px 0 0;font-size:12px;color:#677185">${esc(footer ?? "Tento e-mail byl odeslán automaticky.")}</p>
 </td></tr></table></td></tr></table></body></html>`;
 }
 

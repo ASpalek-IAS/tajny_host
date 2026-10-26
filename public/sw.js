@@ -11,7 +11,7 @@
  *
  * Při změně logiky zvyšte VERSION – staré mezipaměti se smažou.
  */
-const VERSION = "v1";
+const VERSION = "v2";
 const PAGES = `ms-pages-${VERSION}`;
 const STATIC = `ms-static-${VERSION}`;
 
@@ -176,9 +176,9 @@ self.addEventListener("message", (event) => {
 
 function offlinePage(what) {
   const html = `<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Offline</title><style>body{font-family:system-ui,sans-serif;background:#f7f6f3;color:#2b2926;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}
-.c{max-width:360px;background:#fff;border:1px solid #e2e0db;border-radius:14px;padding:24px;text-align:center}h1{font-size:18px;margin:0 0 8px}p{font-size:14px;color:#5f5b54;line-height:1.5}
-a{display:inline-block;margin-top:8px;color:#136f61;font-weight:600}</style></head><body><div class="c">
+<title>Offline</title><style>body{font-family:system-ui,sans-serif;background:#f5f7fa;color:#232a38;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}
+.c{max-width:360px;background:#fff;border:1px solid #dfe4ec;border-radius:14px;padding:24px;text-align:center}h1{font-size:18px;margin:0 0 8px}p{font-size:14px;color:#4f586b;line-height:1.5}
+a{display:inline-block;margin-top:8px;color:#1f3f86;font-weight:600}</style></head><body><div class="c">
 <h1>Jste offline</h1><p>${what} není uložená v tomto zařízení. Kontroly se do telefonu stáhnou, když otevřete přehled „Moje kontroly“ s připojením.</p>
 <a href="/agent">Zkusit znovu</a></div></body></html>`;
   return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
