@@ -26,7 +26,7 @@ import {
 } from "@/lib/types";
 import type { ActionResult } from "@/lib/action-result";
 
-export type LibraryQuestion = Question & { template_name: string; company_name: string };
+export type LibraryQuestion = Question & { template_name: string; company_name: string; source?: "template" | "history" };
 
 export function QuestionnaireEditor({
   scope,
@@ -411,7 +411,8 @@ function NewQuestion({
       <div className="space-y-4">
         <Notice>
           Převzato ze šablony <strong>{picked.template_name}</strong>
-          {picked.company_name ? ` (${picked.company_name})` : ""}. Před uložením můžete otázku upravit.
+          {picked.company_name ? ` (${picked.company_name})` : ""}
+          {picked.source === "history" ? " – dřívější znění použité v kontrolách" : ""}. Před uložením můžete otázku upravit.
         </Notice>
         <QuestionForm
           key={picked.id}
@@ -451,12 +452,13 @@ function NewQuestion({
         <QuestionForm onSave={onSave} onCancel={onCancel} />
       ) : library.length === 0 ? (
         <p className="py-6 text-center text-sm text-ink-500">
-          V ostatních šablonách není žádné téma „{topicTitle}“ s otázkami, které by tu ještě nebyly.
+          V šablonách ani v dřívějších kontrolách není v tématu „{topicTitle}“ žádná otázka, která by tu ještě nebyla.
         </p>
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-ink-600">
-            Otázky z témat „{topicTitle}“ ve všech šablonách. Kliknutím otázku převezmete – před uložením ji můžete upravit.
+            Otázky z témat „{topicTitle}“ ve všech šablonách včetně dřívějších znění použitých v kontrolách. Kliknutím otázku
+            převezmete – před uložením ji můžete upravit.
           </p>
           <input className="input" placeholder="Hledat v otázkách…" value={filter} onChange={(e) => setFilter(e.target.value)} />
           <ul className="max-h-96 divide-y divide-ink-100 overflow-y-auto rounded-lg border border-ink-200">
@@ -466,6 +468,7 @@ function NewQuestion({
                   <span className="block text-sm text-ink-900">{q.text}</span>
                   <span className="mt-1 flex flex-wrap items-center gap-1.5">
                     <Badge tone="brand">{q.template_name}</Badge>
+                    {q.source === "history" && <Badge tone="mid">dřívější znění</Badge>}
                     {q.company_name && <span className="text-xs text-ink-500">{q.company_name}</span>}
                     <span className="text-xs text-ink-400">
                       · {QUESTION_TYPE_LABEL[q.type]}

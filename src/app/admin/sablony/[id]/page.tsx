@@ -21,30 +21,19 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
   // Kolik kontrol z této šablony už existuje (pro zpětné úpravy)
   const { data: usage } = await db.rpc("template_usage", { p_template: id });
 
-  // Knihovna: otázky z témat se stejným názvem ve všech ostatních šablonách
+  // Knihovna: otázky z témat se stejným názvem ze všech šablon i z dřívějších verzí (kontrol)
   const titles = [...new Set((topics ?? []).map((t) => t.title as string))];
   const library: Record<string, LibraryQuestion[]> = {};
   if (titles.length) {
-    const { data: lib } = await db
-      .from("template_topics")
-      .select("title,template:templates(id,name,company:companies(name)),template_questions(*)")
-      .neq("template_id", id)
-      .in("title", titles);
-    for (const t of (lib ?? []) as unknown as {
-      title: string;
-      template: { id: string; name: string; company: { name: string } | null } | null;
-      template_questions: Question[];
-    }[]) {
-      const key = t.title.trim().toLowerCase();
-      const seen = new Set((library[key] ?? []).map((q) => q.text.trim().toLowerCase() + "|" + q.template_name));
-      for (const q of [...t.template_questions].sort((a, b) => a.position - b.position)) {
-        const item = { ...q, template_name: t.template?.name ?? "", company_name: t.template?.company?.name ?? "" };
-        const k = q.text.trim().toLowerCase() + "|" + item.template_name;
-        if (seen.has(k)) continue;
-        seen.add(k);
-        (library[key] ??= []).push(item);
-      }
-    }
+    const { data: lib } = await db.rpc("question_library", { p_titles: titles });
+    ((lib ?? []) as (Omit<LibraryQuestion, "id" | "topic_id" | "position"> & { topic_title: string; template_id: string | null })[]).forEach(
+      (q, i) => {
+        const key = q.topic_title.trim().toLowerCase();
+        (library[key] ??= []).push({ ...q, id: `lib-${i}`, topic_id: "", position: i, template_name: q.template_name ?? "", company_name: q.company_name ?? "" });
+      },
+    );
+    for (const k of Object.keys(library))
+      library[k].sort((x, y) => Number(x.source === "history") - Number(y.source === "history") || x.text.localeCompare(y.text, "cs"));
   }
 
   return (
