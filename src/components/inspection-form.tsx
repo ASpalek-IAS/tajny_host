@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { saveAnswer, saveVisitAt, submitInspection } from "@/lib/answer-actions";
 import { questionFraction, type Answer, type Question, type Topic } from "@/lib/types";
 import { toLocalInput } from "@/lib/format";
+import { clearDraft, readDraft, writeDraft, type Draft } from "@/lib/offline-draft";
 
 type FileItem = {
   id: string;
@@ -49,31 +50,132 @@ export function InspectionForm({
   const [error, setError] = useState<string | null>(null);
   const [missing, setMissing] = useState<Missing[]>([]);
   const [submitting, startSubmit] = useTransition();
+  const [online, setOnline] = useState(true);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [restored, setRestored] = useState(0);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const pendingSaves = useRef(0);
+  const inFlight = useRef(0);
+  // Záloha neodeslaných změn – drží se v paměti i v localStorage
+  const draft = useRef<Draft>({ answers: {} });
+  const flushing = useRef(false);
+  // Pořadové číslo změny (rozliší, jestli se odpověď mezi odesláním a odpovědí serveru znovu změnila)
+  const seq = useRef(0);
+  useEffect(() => {
+    seq.current = Date.now();
+  }, []);
 
-  const persist = useCallback(
-    async (qid: string, value: unknown, comment: string) => {
-      pendingSaves.current++;
+  const storeDraft = useCallback(() => {
+    writeDraft(inspectionId, draft.current);
+    setPendingCount(Object.keys(draft.current.answers).length + (draft.current.visit ? 1 : 0));
+  }, [inspectionId]);
+
+  /** Pošle na server jednu odpověď ze zálohy. Vrací false při výpadku sítě. */
+  const pushAnswer = useCallback(
+    async (qid: string): Promise<boolean> => {
+      const item = draft.current.answers[qid];
+      if (!item) return true;
+      inFlight.current++;
       setSaveState("saving");
-      const r = await saveAnswer(qid, value, comment);
-      pendingSaves.current--;
-      if (r.error) {
-        setSaveState("error");
-        setError(r.error);
-      } else if (pendingSaves.current === 0) {
-        setSaveState("saved");
+      try {
+        const r = await saveAnswer(qid, item.value, item.comment);
+        // server odpověděl – záznam ze zálohy odstraníme, pokud se mezitím nezměnil
+        if (draft.current.answers[qid]?.t === item.t) delete draft.current.answers[qid];
+        storeDraft();
+        if (r.error) {
+          setError(r.error);
+          setSaveState("error");
+        }
+        setOnline(true);
+        return true;
+      } catch {
+        setOnline(false);
+        return false;
+      } finally {
+        inFlight.current--;
+        if (inFlight.current === 0) {
+          setSaveState((st) => (st === "error" ? st : Object.keys(draft.current.answers).length ? "idle" : "saved"));
+        }
       }
     },
-    [],
+    [storeDraft],
   );
 
+  const pushVisit = useCallback(async (): Promise<boolean> => {
+    const item = draft.current.visit;
+    if (!item) return true;
+    try {
+      const r = await saveVisitAt(inspectionId, item.value);
+      if (draft.current.visit?.t === item.t) delete draft.current.visit;
+      storeDraft();
+      if (r.error) setError(r.error);
+      setOnline(true);
+      return true;
+    } catch {
+      setOnline(false);
+      return false;
+    }
+  }, [inspectionId, storeDraft]);
+
+  /** Odešle všechno, co je v záloze. */
+  const flush = useCallback(async () => {
+    if (flushing.current) return;
+    flushing.current = true;
+    try {
+      if (!(await pushVisit())) return;
+      for (const qid of Object.keys(draft.current.answers)) {
+        if (timers.current[qid]) continue; // ještě se píše, odešle se samo
+        if (!(await pushAnswer(qid))) return;
+      }
+    } finally {
+      flushing.current = false;
+    }
+  }, [pushAnswer, pushVisit]);
+
+  // Po otevření: obnovit neodeslané změny ze zálohy a zkusit je poslat
+  useEffect(() => {
+    const d = readDraft(inspectionId);
+    draft.current = d;
+    const qids = Object.keys(d.answers);
+    if (qids.length || d.visit) {
+      /* eslint-disable react-hooks/set-state-in-effect */
+      setValues((s) => ({ ...s, ...Object.fromEntries(qids.map((q) => [q, d.answers[q].value])) }));
+      setComments((s) => ({ ...s, ...Object.fromEntries(qids.map((q) => [q, d.answers[q].comment])) }));
+      if (d.visit) setVisit(toLocalInput(d.visit.value));
+      setRestored(qids.length + (d.visit ? 1 : 0));
+      setPendingCount(qids.length + (d.visit ? 1 : 0));
+      /* eslint-enable react-hooks/set-state-in-effect */
+      flush();
+    }
+  }, [inspectionId, flush]);
+
+  // Při návratu připojení a pravidelně každých 15 s dosílat zálohu
+  useEffect(() => {
+    const goOnline = () => {
+      setOnline(true);
+      flush();
+    };
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    const iv = setInterval(() => {
+      if (Object.keys(draft.current.answers).length || draft.current.visit) flush();
+    }, 15000);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+      clearInterval(iv);
+    };
+  }, [flush]);
+
   const schedule = (qid: string, value: unknown, comment: string, delay: number) => {
+    // hned do zálohy v zařízení – přežije výpadek sítě i vybitý telefon
+    draft.current.answers[qid] = { value: value === undefined ? null : value, comment, t: ++seq.current };
+    storeDraft();
     clearTimeout(timers.current[qid]);
     setSaveState("saving");
     timers.current[qid] = setTimeout(() => {
       delete timers.current[qid];
-      persist(qid, value, comment);
+      pushAnswer(qid);
     }, delay);
     setMissing((m) => m.filter((x) => x.question_id !== qid));
   };
@@ -86,11 +188,16 @@ export function InspectionForm({
     setComments((s) => ({ ...s, [qid]: c }));
     schedule(qid, values[qid] ?? null, c, 800);
   };
+  const changeVisit = (v: string) => {
+    setVisit(v);
+    draft.current.visit = { value: v ? new Date(v).toISOString() : null, t: ++seq.current };
+    storeDraft();
+  };
 
-  // varování při zavření s neuloženými změnami
+  // varování při zavření s neodeslanými změnami (v záloze ale zůstanou)
   useEffect(() => {
     const h = (e: BeforeUnloadEvent) => {
-      if (pendingSaves.current > 0 || Object.keys(timers.current).length > 0) e.preventDefault();
+      if (inFlight.current > 0 || Object.keys(draft.current.answers).length > 0) e.preventDefault();
     };
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
@@ -111,14 +218,26 @@ export function InspectionForm({
   const submit = () => {
     if (!confirm("Odeslat kontrolu ke schválení? Potom už ji nebude možné upravit.")) return;
     startSubmit(async () => {
-      // nejdřív dokončit rozepsané ukládání
+      // nejdřív dokončit rozepsané a neodeslané ukládání
       for (const [qid, t] of Object.entries(timers.current)) {
         clearTimeout(t);
         delete timers.current[qid];
-        await persist(qid, values[qid] ?? null, comments[qid] ?? "");
       }
-      const r = await submitInspection(inspectionId);
+      await flush();
+      if (Object.keys(draft.current.answers).length || draft.current.visit) {
+        setError("Některé odpovědi se zatím nepodařilo uložit, protože chybí připojení. Odešlete kontrolu, až budete online – odpovědi jsou bezpečně uložené v zařízení.");
+        return;
+      }
+      let r;
+      try {
+        r = await submitInspection(inspectionId);
+      } catch {
+        setOnline(false);
+        setError("Bez připojení nelze kontrolu odeslat. Zkuste to znovu, až budete online.");
+        return;
+      }
       if (r.ok) {
+        clearDraft(inspectionId);
         router.push("/agent?odeslano=1");
         return;
       }
@@ -132,6 +251,22 @@ export function InspectionForm({
 
   return (
     <div className="pb-28">
+      {!online && (
+        <div className="mb-4">
+          <Notice tone="warn">
+            <strong>Jste offline.</strong> Vyplňujte dál – odpovědi se ukládají do tohoto zařízení a automaticky se odešlou, jakmile
+            bude připojení zpět. Fotky lze nahrát až s připojením.
+          </Notice>
+        </div>
+      )}
+      {restored > 0 && (
+        <div className="mb-4">
+          <Notice tone="info">
+            Obnoveno {restored} {restored === 1 ? "neodeslaná odpověď" : restored < 5 ? "neodeslané odpovědi" : "neodeslaných odpovědí"} z
+            tohoto zařízení{pendingCount === 0 ? " – vše je už uložené na serveru." : ", odesílám je…"}
+          </Notice>
+        </div>
+      )}
       {error && (
         <div className="mb-4">
           <Notice tone="error">{error}</Notice>
@@ -145,12 +280,10 @@ export function InspectionForm({
             type="datetime-local"
             className="input"
             value={visit}
-            onChange={(e) => setVisit(e.target.value)}
-            onBlur={async () => {
+            onChange={(e) => changeVisit(e.target.value)}
+            onBlur={() => {
               setMissing((m) => m.filter((x) => x.question_id !== null));
-              const r = await saveVisitAt(inspectionId, visit ? new Date(visit).toISOString() : null);
-              if (r.error) setError(r.error);
-              else setSaveState("saved");
+              flush();
             }}
           />
         </label>
@@ -219,14 +352,19 @@ export function InspectionForm({
             <p className="font-medium">
               Vyplněno {done} z {required.length} povinných
             </p>
-            <p className="text-xs text-ink-500">
-              {saveState === "saving"
-                ? "Ukládám…"
-                : saveState === "saved"
-                  ? "Vše uloženo"
+            <p className={cx("flex items-center gap-1.5 text-xs", !online || pendingCount ? "text-mid" : "text-ink-500")}>
+              <span className={cx("h-1.5 w-1.5 rounded-full", online ? (pendingCount ? "bg-mid" : "bg-good") : "bg-bad")} />
+              {!online
+                ? `Offline – ${pendingCount} ${pendingCount === 1 ? "změna čeká" : "změn čeká"} v zařízení na odeslání`
+                : saveState === "saving"
+                  ? "Ukládám…"
                   : saveState === "error"
                     ? "Chyba při ukládání"
-                    : "Odpovědi se ukládají automaticky"}
+                    : pendingCount
+                      ? `Odesílám ${pendingCount} uložených změn…`
+                      : saveState === "saved"
+                        ? "Vše uloženo"
+                        : "Odpovědi se ukládají automaticky"}
             </p>
           </div>
           {mode === "agent" ? (
