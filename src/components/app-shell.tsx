@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Logo } from "@/components/auth-card";
 import { NavLinks, type NavItem } from "@/components/nav-links";
-import { logout } from "@/app/auth/actions";
+import { LogoutButton } from "@/components/logout-button";
 import { ROLE_LABEL, type Profile } from "@/lib/types";
 
 export function AppShell({
@@ -43,9 +43,7 @@ export function AppShell({
             <Link href="/ucet" className="text-ink-600">
               Účet
             </Link>
-            <form action={logout}>
-              <button className="text-ink-600">Odhlásit</button>
-            </form>
+            <LogoutButton className="text-ink-600" label="Odhlásit" />
           </div>
         </div>
         <NavLinks items={nav} mobile />
@@ -65,11 +63,10 @@ function UserBox({ profile }: { profile: Profile }) {
         <p className="truncate text-sm font-medium">{profile.full_name || profile.email}</p>
         <p className="truncate text-xs text-ink-500">{profile.email}</p>
       </Link>
-      <form action={logout}>
-        <button className="mt-1 w-full rounded-lg px-3 py-1.5 text-left text-sm text-ink-500 hover:bg-ink-50 hover:text-ink-800">
-          Odhlásit se
-        </button>
-      </form>
+      <LogoutButton
+        className="mt-1 w-full rounded-lg px-3 py-1.5 text-left text-sm text-ink-500 hover:bg-ink-50 hover:text-ink-800"
+        label="Odhlásit se"
+      />
     </div>
   );
 }

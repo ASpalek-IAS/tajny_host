@@ -7,7 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import { saveAnswer, saveExpense, saveVisitAt, submitInspection } from "@/lib/answer-actions";
 import { questionFraction, type Answer, type Question, type Topic } from "@/lib/types";
 import { toLocalInput } from "@/lib/format";
-import { clearDraft, draftSize, readDraft, writeDraft, type Draft } from "@/lib/offline-draft";
+import { clearDraft, draftSize, readDraft, readSnapshot, writeDraft, writeSnapshot, type Draft } from "@/lib/offline-draft";
+import { isNetworkError, offlineFilesSupported, queueFile, queuedFiles, unqueueFile, uploadQueued, type QueuedFile } from "@/lib/offline-files";
 
 type FileItem = {
   id: string;
@@ -16,6 +17,8 @@ type FileItem = {
   file_name: string;
   mime_type: string | null;
   url: string | null;
+  /** fotka čeká v zařízení na nahrání */
+  pending?: boolean;
 };
 
 type Missing = { question_id: string | null; reason: string };
@@ -29,6 +32,7 @@ export function InspectionForm({
   attachments,
   visitAt,
   expense = null,
+  renderedAt = 0,
 }: {
   inspectionId: string;
   mode: "agent" | "admin";
@@ -39,6 +43,8 @@ export function InspectionForm({
   visitAt: string | null;
   /** útrata v Kč – vyplňuje jen agent (správce ji upravuje v detailech kontroly) */
   expense?: number | null;
+  /** čas vykreslení stránky na serveru (ms) – kvůli stránce otevřené offline z mezipaměti */
+  renderedAt?: number;
 }) {
   const router = useRouter();
   const [values, setValues] = useState<Record<string, unknown>>(() =>
@@ -72,6 +78,107 @@ export function InspectionForm({
     writeDraft(inspectionId, draft.current);
     setPendingCount(draftSize(draft.current));
   }, [inspectionId]);
+
+  const pendingFiles = files.filter((f) => f.pending).length;
+  const fileFlushing = useRef(false);
+
+  /** Nahraje fotky čekající v zařízení. Vrací false při výpadku sítě. */
+  const pushFiles = useCallback(async (): Promise<boolean> => {
+    if (!offlineFilesSupported() || fileFlushing.current) return true;
+    fileFlushing.current = true;
+    try {
+      const supabase = createClient();
+      for (const f of await queuedFiles(inspectionId)) {
+        try {
+          const id = await uploadQueued(supabase, f);
+          await unqueueFile(f.id);
+          setFiles((s) => s.map((x) => (x.id === `local-${f.id}` ? { ...x, id, pending: false } : x)));
+          setOnline(true);
+        } catch (e) {
+          if (isNetworkError(e)) {
+            setOnline(false);
+            return false;
+          }
+          // server fotku odmítl (např. kontrola už je odeslaná) – dál ji nezkoušet
+          await unqueueFile(f.id);
+          setFiles((s) => s.filter((x) => x.id !== `local-${f.id}`));
+          setError(`Fotku ${f.fileName} se nepodařilo nahrát: ${e instanceof Error ? e.message : "chyba serveru"}`);
+        }
+      }
+      return true;
+    } finally {
+      fileFlushing.current = false;
+    }
+  }, [inspectionId]);
+
+  /** Přidá fotky: nejdřív do zařízení, pak nahrát (bez signálu počkají ve frontě). */
+  const addFiles = async (questionId: string, list: File[]) => {
+    for (const file of list) {
+      if (file.size > 20 * 1024 * 1024) {
+        setError(`Soubor ${file.name} je větší než 20 MB.`);
+        continue;
+      }
+      const blob = await compress(file);
+      const isJpeg = blob !== file;
+      const ext = isJpeg ? "jpg" : (file.name.split(".").pop() || "bin").toLowerCase();
+      const q: QueuedFile = {
+        id: crypto.randomUUID(),
+        inspectionId,
+        questionId,
+        path: `${inspectionId}/${crypto.randomUUID()}.${ext}`,
+        fileName: file.name,
+        mime: isJpeg ? "image/jpeg" : file.type || "application/octet-stream",
+        blob,
+        createdAt: ++seq.current,
+      };
+      let queued = false;
+      if (offlineFilesSupported()) {
+        try {
+          await queueFile(q);
+          queued = true;
+        } catch {
+          /* úložiště nedostupné – zkusíme rovnou nahrát */
+        }
+      }
+      setFiles((s) => [
+        ...s,
+        {
+          id: `local-${q.id}`,
+          question_id: questionId,
+          storage_path: q.path,
+          file_name: q.fileName,
+          mime_type: q.mime,
+          url: URL.createObjectURL(blob),
+          pending: true,
+        },
+      ]);
+      setMissing((m) => m.filter((x) => x.question_id !== questionId));
+      if (!queued) {
+        try {
+          const id = await uploadQueued(createClient(), q);
+          setFiles((s) => s.map((x) => (x.id === `local-${q.id}` ? { ...x, id, pending: false } : x)));
+        } catch (e) {
+          setFiles((s) => s.filter((x) => x.id !== `local-${q.id}`));
+          setError("Nahrání souboru se nepovedlo: " + (e instanceof Error ? e.message : ""));
+        }
+      }
+    }
+    await pushFiles();
+  };
+
+  const removeFile = async (f: FileItem) => {
+    if (!confirm(`Odstranit ${f.file_name}?`)) return;
+    if (f.pending) {
+      await unqueueFile(f.id.replace(/^local-/, "")).catch(() => {});
+      setFiles((s) => s.filter((x) => x.id !== f.id));
+      return;
+    }
+    const supabase = createClient();
+    const { error: delErr } = await supabase.from("attachments").delete().eq("id", f.id).eq("inspection_id", inspectionId);
+    if (delErr) return setError(isNetworkError(delErr) ? "Bez připojení nelze odstranit už nahraný soubor." : "Soubor se nepodařilo odstranit.");
+    await supabase.storage.from("attachments").remove([f.storage_path]);
+    setFiles((s) => s.filter((x) => x.id !== f.id));
+  };
 
   /** Pošle na server jednu odpověď ze zálohy. Vrací false při výpadku sítě. */
   const pushAnswer = useCallback(
@@ -147,28 +254,69 @@ export function InspectionForm({
         if (timers.current[qid]) continue; // ještě se píše, odešle se samo
         if (!(await pushAnswer(qid))) return;
       }
+      // fotky až nakonec – velký soubor na slabém signálu nesmí zdržet odpovědi
+      await pushFiles();
     } finally {
       flushing.current = false;
     }
-  }, [pushAnswer, pushVisit, pushExpense]);
+  }, [pushAnswer, pushVisit, pushExpense, pushFiles]);
 
   // Po otevření: obnovit neodeslané změny ze zálohy a zkusit je poslat
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    // stránka z mezipaměti (otevřená offline) může být starší než poslední uložené odpovědi
+    const snap = mode === "agent" ? readSnapshot(inspectionId) : null;
+    if (snap && renderedAt && snap.savedAt > renderedAt) {
+      setValues((s) => ({ ...s, ...snap.values }));
+      setComments((s) => ({ ...s, ...snap.comments }));
+      setVisit(snap.visit);
+      setSpent(snap.spent);
+    }
     const d = readDraft(inspectionId);
     draft.current = d;
     const qids = Object.keys(d.answers);
     if (draftSize(d)) {
-      /* eslint-disable react-hooks/set-state-in-effect */
       setValues((s) => ({ ...s, ...Object.fromEntries(qids.map((q) => [q, d.answers[q].value])) }));
       setComments((s) => ({ ...s, ...Object.fromEntries(qids.map((q) => [q, d.answers[q].comment])) }));
       if (d.visit) setVisit(toLocalInput(d.visit.value));
       if (d.expense) setSpent(d.expense.value === null ? "" : String(d.expense.value).replace(".", ","));
       setRestored(draftSize(d));
       setPendingCount(draftSize(d));
-      /* eslint-enable react-hooks/set-state-in-effect */
       flush();
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // fotky, které čekají v zařízení na nahrání
+    if (offlineFilesSupported()) {
+      queuedFiles(inspectionId).then((list) => {
+        if (!list.length) return;
+        setFiles((s) => [
+          ...s.filter((x) => !list.some((q) => q.path === x.storage_path)),
+          ...list.map((q) => ({
+            id: `local-${q.id}`,
+            question_id: q.questionId,
+            storage_path: q.path,
+            file_name: q.fileName,
+            mime_type: q.mime,
+            url: URL.createObjectURL(q.blob),
+            pending: true,
+          })),
+        ]);
+        pushFiles();
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inspectionId, flush]);
+
+  // snímek celého formuláře pro offline otevření stránky z mezipaměti
+  const firstSnap = useRef(true);
+  useEffect(() => {
+    if (mode !== "agent") return;
+    if (firstSnap.current) {
+      firstSnap.current = false;
+      return;
+    }
+    writeSnapshot(inspectionId, { values, comments, visit, spent, savedAt: Date.now() });
+  }, [mode, inspectionId, values, comments, visit, spent]);
 
   // Při návratu připojení a pravidelně každých 15 s dosílat zálohu
   useEffect(() => {
@@ -180,7 +328,7 @@ export function InspectionForm({
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
     const iv = setInterval(() => {
-      if (draftSize(draft.current)) flush();
+      flush(); // odpovědi i fotky čekající v zařízení
     }, 15000);
     return () => {
       window.removeEventListener("online", goOnline);
@@ -254,7 +402,7 @@ export function InspectionForm({
         delete timers.current[qid];
       }
       await flush();
-      if (draftSize(draft.current)) {
+      if (draftSize(draft.current) || (await queuedFiles(inspectionId)).length) {
         setError("Některé odpovědi se zatím nepodařilo uložit, protože chybí připojení. Odešlete kontrolu, až budete online – odpovědi jsou bezpečně uložené v zařízení.");
         return;
       }
@@ -279,13 +427,16 @@ export function InspectionForm({
     });
   };
 
+  // neodeslané odpovědi + fotky čekající v zařízení
+  const waiting = pendingCount + pendingFiles;
+
   return (
     <div className="pb-28">
       {!online && (
         <div className="mb-4">
           <Notice tone="warn">
             <strong>Jste offline.</strong> Vyplňujte dál – odpovědi se ukládají do tohoto zařízení a automaticky se odešlou, jakmile
-            bude připojení zpět. Fotky lze nahrát až s připojením.
+            bude připojení zpět. Fotky se uloží také a nahrají se po připojení.
           </Notice>
         </div>
       )}
@@ -368,7 +519,6 @@ export function InspectionForm({
                     key={q.id}
                     num={`${ti + 1}.${qi + 1}`}
                     q={q}
-                    inspectionId={inspectionId}
                     value={values[q.id]}
                     comment={comments[q.id] ?? ""}
                     files={files.filter((f) => f.question_id === q.id)}
@@ -376,12 +526,8 @@ export function InspectionForm({
                     commentRequired={needsComment(q)}
                     onValue={(v, delay) => setValue(q.id, v, delay)}
                     onComment={(c) => setComment(q.id, c)}
-                    onFileAdded={(f) => {
-                      setFiles((s) => [...s, f]);
-                      setMissing((m) => m.filter((x) => x.question_id !== q.id));
-                    }}
-                    onFileRemoved={(id) => setFiles((s) => s.filter((f) => f.id !== id))}
-                    onError={setError}
+                    onFiles={(list) => addFiles(q.id, list)}
+                    onFileRemove={removeFile}
                   />
                 ))}
               </ol>
@@ -396,16 +542,16 @@ export function InspectionForm({
             <p className="font-medium">
               Vyplněno {done} z {required.length} povinných
             </p>
-            <p className={cx("flex items-center gap-1.5 text-xs", !online || pendingCount ? "text-mid" : "text-ink-500")}>
-              <span className={cx("h-1.5 w-1.5 rounded-full", online ? (pendingCount ? "bg-mid" : "bg-good") : "bg-bad")} />
+            <p className={cx("flex items-center gap-1.5 text-xs", !online || waiting ? "text-mid" : "text-ink-500")}>
+              <span className={cx("h-1.5 w-1.5 rounded-full", online ? (waiting ? "bg-mid" : "bg-good") : "bg-bad")} />
               {!online
-                ? `Offline – ${pendingCount} ${pendingCount === 1 ? "změna čeká" : "změn čeká"} v zařízení na odeslání`
+                ? `Offline – ${waiting} ${waiting === 1 ? "změna čeká" : waiting < 5 ? "změny čekají" : "změn čeká"} v zařízení na odeslání`
                 : saveState === "saving"
                   ? "Ukládám…"
                   : saveState === "error"
                     ? "Chyba při ukládání"
-                    : pendingCount
-                      ? `Odesílám ${pendingCount} uložených změn…`
+                    : waiting
+                      ? `Odesílám ${waiting} ${waiting === 1 ? "uloženou změnu" : waiting < 5 ? "uložené změny" : "uložených změn"}…`
                       : saveState === "saved"
                         ? "Vše uloženo"
                         : "Odpovědi se ukládají automaticky"}
@@ -432,7 +578,6 @@ export function InspectionForm({
 function QuestionField({
   num,
   q,
-  inspectionId,
   value,
   comment,
   files,
@@ -440,13 +585,11 @@ function QuestionField({
   commentRequired,
   onValue,
   onComment,
-  onFileAdded,
-  onFileRemoved,
-  onError,
+  onFiles,
+  onFileRemove,
 }: {
   num: string;
   q: Question;
-  inspectionId: string;
   value: unknown;
   comment: string;
   files: FileItem[];
@@ -454,9 +597,8 @@ function QuestionField({
   commentRequired: boolean;
   onValue: (v: unknown, delay?: number) => void;
   onComment: (c: string) => void;
-  onFileAdded: (f: FileItem) => void;
-  onFileRemoved: (id: string) => void;
-  onError: (e: string) => void;
+  onFiles: (list: File[]) => Promise<void>;
+  onFileRemove: (f: FileItem) => void;
 }) {
   const [showComment, setShowComment] = useState(Boolean(comment));
   const commentVisible = showComment || commentRequired || Boolean(comment);
@@ -477,7 +619,7 @@ function QuestionField({
           <AnswerInput q={q} value={value} onValue={onValue} />
 
           {(q.type === "file" || files.length > 0) && (
-            <FileList files={files} inspectionId={inspectionId} onRemoved={onFileRemoved} onError={onError} />
+            <FileList files={files} onRemove={onFileRemove} />
           )}
 
           {commentVisible ? (
@@ -501,12 +643,9 @@ function QuestionField({
               </button>
             )}
             <Uploader
-              inspectionId={inspectionId}
-              questionId={q.id}
               label={q.type === "file" ? "Nahrát fotku / soubor" : "+ Přidat fotku"}
               prominent={q.type === "file"}
-              onAdded={onFileAdded}
-              onError={onError}
+              onFiles={onFiles}
             />
           </div>
         </div>
@@ -686,66 +825,21 @@ async function compress(file: File): Promise<Blob> {
 }
 
 function Uploader({
-  inspectionId,
-  questionId,
   label,
   prominent,
-  onAdded,
-  onError,
+  onFiles,
 }: {
-  inspectionId: string;
-  questionId: string;
   label: string;
   prominent?: boolean;
-  onAdded: (f: FileItem) => void;
-  onError: (e: string) => void;
+  onFiles: (list: File[]) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
   const upload = async (list: FileList | null) => {
     if (!list?.length) return;
     setBusy(true);
-    const supabase = createClient();
     try {
-      for (const file of Array.from(list)) {
-        if (file.size > 20 * 1024 * 1024) {
-          onError(`Soubor ${file.name} je větší než 20 MB.`);
-          continue;
-        }
-        const blob = await compress(file);
-        const isJpeg = blob !== file;
-        const ext = isJpeg ? "jpg" : (file.name.split(".").pop() || "bin").toLowerCase();
-        const path = `${inspectionId}/${crypto.randomUUID()}.${ext}`;
-        const mime = isJpeg ? "image/jpeg" : file.type || "application/octet-stream";
-        const { error: upErr } = await supabase.storage.from("attachments").upload(path, blob, { contentType: mime });
-        if (upErr) throw upErr;
-        const { data, error } = await supabase
-          .from("attachments")
-          .insert({
-            inspection_id: inspectionId,
-            question_id: questionId,
-            storage_path: path,
-            file_name: file.name,
-            mime_type: mime,
-            size_bytes: blob.size,
-          })
-          .select("id")
-          .single();
-        if (error) {
-          await supabase.storage.from("attachments").remove([path]);
-          throw error;
-        }
-        onAdded({
-          id: data.id,
-          question_id: questionId,
-          storage_path: path,
-          file_name: file.name,
-          mime_type: mime,
-          url: URL.createObjectURL(blob),
-        });
-      }
-    } catch (e) {
-      onError("Nahrání souboru se nepovedlo: " + (e instanceof Error ? e.message : ""));
+      await onFiles(Array.from(list));
     } finally {
       setBusy(false);
       if (ref.current) ref.current.value = "";
@@ -764,32 +858,14 @@ function Uploader({
             : "text-brand-700 hover:underline"
         }
       >
-        {busy ? "Nahrávám…" : label}
+        {busy ? "Ukládám…" : label}
       </button>
     </>
   );
 }
 
-function FileList({
-  files,
-  inspectionId,
-  onRemoved,
-  onError,
-}: {
-  files: FileItem[];
-  inspectionId: string;
-  onRemoved: (id: string) => void;
-  onError: (e: string) => void;
-}) {
+function FileList({ files, onRemove }: { files: FileItem[]; onRemove: (f: FileItem) => void }) {
   if (files.length === 0) return null;
-  const remove = async (f: FileItem) => {
-    if (!confirm(`Odstranit ${f.file_name}?`)) return;
-    const supabase = createClient();
-    const { error } = await supabase.from("attachments").delete().eq("id", f.id).eq("inspection_id", inspectionId);
-    if (error) return onError("Soubor se nepodařilo odstranit.");
-    await supabase.storage.from("attachments").remove([f.storage_path]);
-    onRemoved(f.id);
-  };
   return (
     <div className="flex flex-wrap gap-2">
       {files.map((f) => (
@@ -802,9 +878,14 @@ function FileList({
               {f.file_name}
             </div>
           )}
+          {f.pending && (
+            <span className="absolute inset-x-0 bottom-0 rounded-b-md bg-ink-900/70 px-1 py-0.5 text-center text-[10px] font-medium text-white">
+              čeká na odeslání
+            </span>
+          )}
           <button
             type="button"
-            onClick={() => remove(f)}
+            onClick={() => onRemove(f)}
             className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full border border-ink-200 bg-white text-xs text-ink-600 shadow-sm hover:text-bad"
             aria-label="Odstranit"
           >

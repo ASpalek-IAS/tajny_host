@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card, CardHeader, EmptyState, Notice, PageHeader, StatusBadge, cx } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
+import { AgentOffline } from "@/components/agent-offline";
 import { requireRole } from "@/lib/auth";
 import { fmtDate, fmtWindow, todayISO } from "@/lib/format";
 import type { InspectionStatus } from "@/lib/types";
@@ -44,6 +45,8 @@ export default async function AgentHome({ searchParams }: { searchParams: Promis
           <Notice tone="success">Kontrola byla odeslána ke schválení. Děkujeme!</Notice>
         </div>
       )}
+
+      <AgentOffline inspectionIds={todo.map((r) => r.id)} />
 
       <h2 className="mb-3 text-sm font-semibold text-ink-700">K vyplnění ({todo.length})</h2>
       {todo.length === 0 ? (

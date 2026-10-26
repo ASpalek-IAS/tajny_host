@@ -19,6 +19,18 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/inspections/[id]/pdf": ["./src/lib/pdf/fonts/**"],
   },
+  async headers() {
+    return [
+      {
+        // service worker se nesmí cachovat, jinak by se nová verze k uživatelům nedostala
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+        ],
+      },
+    ];
+  },
   images: {
     remotePatterns: [{ protocol: "https", hostname: "*.supabase.co" }],
   },

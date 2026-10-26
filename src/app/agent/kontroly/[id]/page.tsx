@@ -8,6 +8,9 @@ import { loadInspectionContent } from "@/lib/inspection-data";
 import { fmtWindow, todayISO } from "@/lib/format";
 import type { InspectionStatus } from "@/lib/types";
 
+/** Čas vykreslení – formulář podle něj pozná stránku otevřenou offline z mezipaměti. */
+const renderedAt = () => Date.now();
+
 export default async function AgentInspectionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const profile = await requireRole("agent");
@@ -102,6 +105,7 @@ export default async function AgentInspectionPage({ params }: { params: Promise<
           attachments={content.attachments}
           visitAt={i.visit_at}
           expense={i.expense === null ? null : Number(i.expense)}
+          renderedAt={renderedAt()}
         />
       ) : (
         <InspectionResult content={content} showScores={false} />
